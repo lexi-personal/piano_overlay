@@ -1,0 +1,197 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui';
+import 'package:flutter/foundation.dart';
+import '../models/project.dart';
+import '../models/midi_note.dart';
+import '../models/video_metadata.dart';
+import '../models/calibration.dart';
+import '../models/overlay_style.dart';
+
+/// Central project state, shared across all screens.
+/// Uses ChangeNotifier for simple, framework-native state management.
+class ProjectProvider extends ChangeNotifier {
+  Project? _project;
+
+  Project? get project => _project;
+  bool get hasProject => _project != null;
+  bool get hasVideo => _project?.hasVideo ?? false;
+  bool get hasMidi => _project?.hasMidi ?? false;
+  bool get hasCalibration => _project?.hasCalibration ?? false;
+  bool get isReadyForPreview => _project?.isReadyForPreview ?? false;
+  bool get isReadyForExport => _project?.isReadyForExport ?? false;
+
+  /// Create a new empty project.
+  void createProject(String name) {
+    _project = Project.create(name);
+    notifyListeners();
+  }
+
+  /// Set video file and metadata.
+  void setVideo(String path, VideoMetadata metadata) {
+    if (_project == null) return;
+    _project!.videoPath = path;
+    _project!.video = metadata;
+    _project!.modifiedAt = DateTime.now().toIso8601String();
+    notifyListeners();
+  }
+
+  /// Set MIDI file data.
+  void setMidi(String path, MidiFileData data) {
+    if (_project == null) return;
+    _project!.midiPath = path;
+    _project!.midi = data;
+    _project!.modifiedAt = DateTime.now().toIso8601String();
+    notifyListeners();
+  }
+
+  /// Set calibration result.
+  void setCalibration(CalibrationData calibration) {
+    if (_project == null) return;
+    _project!.calibration = calibration;
+    _project!.modifiedAt = DateTime.now().toIso8601String();
+    notifyListeners();
+  }
+
+  /// Update sync settings.
+  void updateSync(SyncSettings sync) {
+    if (_project == null) return;
+    _project!.sync = sync;
+    _project!.modifiedAt = DateTime.now().toIso8601String();
+    notifyListeners();
+  }
+
+  /// Update overlay style.
+  void updateStyle(OverlayStyle style) {
+    if (_project == null) return;
+    _project!.style = style;
+    _project!.modifiedAt = DateTime.now().toIso8601String();
+    notifyListeners();
+  }
+
+  /// Update export settings.
+  void updateExportSettings(ExportSettings settings) {
+    if (_project == null) return;
+    _project!.export_ = settings;
+    _project!.modifiedAt = DateTime.now().toIso8601String();
+    notifyListeners();
+  }
+
+  /// Save project to a .pvproj file.
+  Future<String> saveProject(String directoryPath) async {
+    if (_project == null) throw StateError('No project to save');
+
+    final fileName = '${_project!.name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_')}.pvproj';
+    final filePath = '$directoryPath/$fileName';
+    final json = _projectToJson(_project!);
+    final file = File(filePath);
+    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(json));
+    return filePath;
+  }
+
+  /// Load project from a .pvproj file.
+  Future<void> loadProject(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw Exception('Project file not found: $filePath');
+    }
+
+    final content = await file.readAsString();
+    final json = jsonDecode(content) as Map<String, dynamic>;
+    _project = _projectFromJson(json);
+    notifyListeners();
+  }
+
+  // --- Serialization ---
+
+  Map<String, dynamic> _projectToJson(Project p) {
+    return {
+      'version': p.version,
+      'name': p.name,
+      'created_at': p.createdAt,
+      'modified_at': p.modifiedAt,
+      'video_path': p.videoPath,
+      'video': p.video?.toJson(),
+      'midi_path': p.midiPath,
+      'midi': p.midi != null ? _midiToJson(p.midi!) : null,
+      'calibration': p.calibration != null ? _calibrationToJson(p.calibration!) : null,
+      'sync': p.sync.toJson(),
+      'style': p.style.toJson(),
+      'export': p.export_.toJson(),
+    };
+  }
+
+  Project _projectFromJson(Map<String, dynamic> json) {
+    return Project(
+      version: json['version'] ?? '1.0.0',
+      name: json['name'] ?? 'Untitled',
+      createdAt: json['created_at'] ?? DateTime.now().toIso8601String(),
+      modifiedAt: json['modified_at'] ?? DateTime.now().toIso8601String(),
+      videoPath: json['video_path'],
+      video: json['video'] != null ? VideoMetadata.fromJson(json['video']) : null,
+      midiPath: json['midi_path'],
+      midi: json['midi'] != null ? MidiFileData.fromJson(json['midi']) : null,
+      calibration: json['calibration'] != null
+          ? CalibrationData.fromJson(json['calibration'])
+          : null,
+      sync: json['sync'] != null
+          ? SyncSettings.fromJson(json['sync'])
+          : const SyncSettings(),
+      style: json['style'] != null
+          ? _overlayStyleFromJson(json['style'])
+          : const OverlayStyle(),
+    );
+  }
+
+  Map<String, dynamic> _midiToJson(MidiFileData midi) {
+    return {
+      'tracks': midi.tracks.map((t) => <String, dynamic>{
+        'name': t.name,
+        'channel': t.channel,
+        'notes': t.notes.map((n) => n.toJson()).toList(),
+      }).toList(),
+      'duration_ms': midi.durationMs,
+      'note_count': midi.noteCount,
+      'initial_tempo_bpm': midi.initialTempoBpm,
+      'ticks_per_beat': midi.ticksPerBeat,
+      'track_count': midi.trackCount,
+    };
+  }
+
+  Map<String, dynamic> _calibrationToJson(CalibrationData cal) {
+    return {
+      'corners': cal.corners.toJson(),
+      'keyboard_size': cal.keyboardSize.name,
+      'homography': cal.homography,
+      'key_positions': cal.keyPositions.map((k) => <String, dynamic>{
+        'note': k.note,
+        'is_black': k.isBlack,
+        'screen_quad': k.screenQuad.map((p) => p.toJson()).toList(),
+        'canonical_x_center': k.canonicalXCenter,
+      }).toList(),
+    };
+  }
+
+  OverlayStyle _overlayStyleFromJson(Map<String, dynamic> json) {
+    return OverlayStyle(
+      whiteKeyColor: _hexToColor(json['white_key_color'] ?? '#D94FC3F7'),
+      blackKeyColor: _hexToColor(json['black_key_color'] ?? '#D9FF7043'),
+      stripThickness: (json['strip_thickness'] as num?)?.toDouble() ?? 0.8,
+      glowStrength: (json['glow_strength'] as num?)?.toDouble() ?? 0.5,
+      glowRadius: (json['glow_radius'] as num?)?.toDouble() ?? 8.0,
+      transparency: (json['transparency'] as num?)?.toDouble() ?? 0.85,
+      lookaheadMs: (json['lookahead_ms'] as num?)?.toDouble() ?? 2000.0,
+      showBeforePlay: json['show_before_play'] ?? true,
+      showDuringPlay: json['show_during_play'] ?? true,
+      fallSpeed: (json['fall_speed'] as num?)?.toDouble() ?? 200.0,
+      keyHighlightEnabled: json['key_highlight_enabled'] ?? true,
+      backgroundDim: (json['background_dim'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  static Color _hexToColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
+  }
+}

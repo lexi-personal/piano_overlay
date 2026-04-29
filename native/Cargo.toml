@@ -1,0 +1,34 @@
+[package]
+name = "piano_overlay_native"
+version = "0.1.0"
+edition = "2021"
+license = "Proprietary"
+description = "Native core for Piano Overlay — MIDI parsing, video metadata, calibration, overlay geometry, export"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+# MIDI parsing (MIT license)
+midly = "0.5"
+
+# Linear algebra for homography (Apache-2.0)
+nalgebra = "0.32"
+
+# Serialization (MIT/Apache-2.0)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# FFT for audio analysis - Phase 2 (MIT/Apache-2.0)
+# rustfft = "6"
+
+# Error handling (MIT/Apache-2.0)
+thiserror = "1"
+anyhow = "1"
+
+# flutter_rust_bridge support (pin version compatible with the codegen)
+# flutter_rust_bridge = "=2.0.0-dev.31"
+
+[dev-dependencies]
+# Testing
+assert_approx_eq = "1"
