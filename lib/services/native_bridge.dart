@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:ffi/ffi.dart';
 import '../models/midi_note.dart';
 import '../models/video_metadata.dart';
@@ -329,13 +330,19 @@ class NativeBridge {
       }
       return DynamicLibrary.open('libpiano_overlay_native.dylib');
     } else if (Platform.isWindows) {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      debugPrint('NativeBridge: exe dir = $exeDir');
+      debugPrint('NativeBridge: working dir = ${Directory.current.path}');
       final candidates = [
+        '$exeDir\\piano_overlay_native.dll',
         'piano_overlay_native.dll',
-        'native/target/release/piano_overlay_native.dll',
-        'native/target/debug/piano_overlay_native.dll',
+        'native\\target\\release\\piano_overlay_native.dll',
+        'native\\target\\debug\\piano_overlay_native.dll',
       ];
       for (final path in candidates) {
-        if (File(path).existsSync()) {
+        final exists = File(path).existsSync();
+        debugPrint('NativeBridge: checking $path -> $exists');
+        if (exists) {
           return DynamicLibrary.open(path);
         }
       }

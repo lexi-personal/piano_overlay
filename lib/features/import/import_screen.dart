@@ -20,6 +20,22 @@ class _ImportScreenState extends State<ImportScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _tryInitBridge();
+  }
+
+  void _tryInitBridge() {
+    if (_bridge.isInitialized) return;
+    try {
+      _bridge.initialize();
+      debugPrint('NativeBridge: initialized successfully');
+    } catch (e) {
+      debugPrint('NativeBridge: failed to initialize: $e');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final project = widget.provider.project;
     final video = project?.video;
