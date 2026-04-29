@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import '../../models/calibration.dart';
 import '../../services/project_provider.dart';
 import '../../services/native_bridge.dart';
@@ -19,7 +21,47 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   bool _computing = false;
   String? _error;
 
+  // Video player for frame seeking
+  Player? _player;
+  VideoController? _videoController;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  bool _videoReady = false;
+
   static const _cornerLabels = ['Top-Left', 'Top-Right', 'Bottom-Right', 'Bottom-Left'];
+
+  @override
+  void initState() {
+    super.initState();
+    _initVideoPlayer();
+  }
+
+  Future<void> _initVideoPlayer() async {
+    final videoPath = widget.provider.project?.videoPath;
+    if (videoPath == null) return;
+
+    _player = Player();
+    _videoController = VideoController(_player!);
+
+    _player!.stream.position.listen((pos) {
+      if (mounted) setState(() => _position = pos);
+    });
+
+    _player!.stream.duration.listen((dur) {
+      if (mounted && dur.inMilliseconds > 0) {
+        setState(() => _duration = dur);
+      }
+    });
+
+    await _player!.open(Media(videoPath), play: false);
+    setState(() => _videoReady = true);
+  }
+
+  @override
+  void dispose() {
+    _player?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +84,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           Expanded(
             child: _buildCalibrationArea(),
           ),
+          // Video seek slider
+          _buildSeekSlider(),
           // Keyboard size selector
           _buildKeyboardSelector(),
           // Controls
@@ -93,23 +137,28 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             color: Colors.black,
             child: Stack(
               children: [
-                // Video frame placeholder (in production: actual video frame)
+                // Video frame display
                 Center(
-                  child: Container(
-                    width: constraints.maxWidth * 0.9,
-                    height: constraints.maxHeight * 0.9,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[900],
-                      border: Border.all(color: Colors.grey[700]!),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Video Frame\n(First frame shown here)',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ),
-                  ),
+                  child: _videoReady && _videoController != null
+                      ? SizedBox(
+                          width: constraints.maxWidth * 0.9,
+                          height: constraints.maxHeight * 0.9,
+                          child: Video(
+                            controller: _videoController!,
+                            controls: (state) => const SizedBox.shrink(),
+                          ),
+                        )
+                      : Container(
+                          width: constraints.maxWidth * 0.9,
+                          height: constraints.maxHeight * 0.9,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[900],
+                            border: Border.all(color: Colors.grey[700]!),
+                          ),
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
                 ),
                 // Overlay with corners and grid
                 CustomPaint(
@@ -178,6 +227,45 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   Color _cornerColor(int index) {
     const colors = [Colors.red, Colors.green, Colors.blue, Colors.orange];
     return colors[index % 4];
+  }
+
+  Widget _buildSeekSlider() {
+    if (!_videoReady) return const SizedBox.shrink();
+
+    final totalMs = _duration.inMilliseconds.toDouble();
+    final currentMs = _position.inMilliseconds.toDouble();
+
+    String formatDuration(Duration d) {
+      final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+      final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+      return '$minutes:$seconds';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          Text(
+            formatDuration(_position),
+            style: const TextStyle(fontSize: 12),
+          ),
+          Expanded(
+            child: Slider(
+              value: totalMs > 0 ? currentMs.clamp(0, totalMs) : 0,
+              min: 0,
+              max: totalMs > 0 ? totalMs : 1,
+              onChanged: (value) {
+                _player?.seek(Duration(milliseconds: value.toInt()));
+              },
+            ),
+          ),
+          Text(
+            formatDuration(_duration),
+            style: const TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildKeyboardSelector() {
