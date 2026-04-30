@@ -162,6 +162,7 @@ class ProjectProvider extends ChangeNotifier {
     return {
       'corners': cal.corners.toJson(),
       'keyboard_size': cal.keyboardSize.name,
+      'key_range': cal.keyRange.toJson(),
       'homography': cal.homography,
       'key_positions': cal.keyPositions.map((k) => <String, dynamic>{
         'note': k.note,
@@ -169,17 +170,23 @@ class ProjectProvider extends ChangeNotifier {
         'screen_quad': k.screenQuad.map((p) => p.toJson()).toList(),
         'canonical_x_center': k.canonicalXCenter,
       }).toList(),
+      'calibration_width': cal.calibrationWidth,
+      'calibration_height': cal.calibrationHeight,
     };
   }
 
   OverlayStyle _overlayStyleFromJson(Map<String, dynamic> json) {
     return OverlayStyle(
-      whiteKeyColor: _hexToColor(json['white_key_color'] ?? '#D94FC3F7'),
-      blackKeyColor: _hexToColor(json['black_key_color'] ?? '#D9FF7043'),
+      whiteKeyColor: _hexToColor(json['white_key_color'] ?? '#FF4FC3F7'),
+      blackKeyColor: _hexToColor(json['black_key_color'] ?? '#FFFF7043'),
+      leftHandColor: _hexToColor(json['left_hand_color'] ?? '#FF4FC3F7'),
+      rightHandColor: _hexToColor(json['right_hand_color'] ?? '#FFFF7043'),
+      useHandColors: json['use_hand_colors'] ?? false,
       stripThickness: (json['strip_thickness'] as num?)?.toDouble() ?? 0.8,
       glowStrength: (json['glow_strength'] as num?)?.toDouble() ?? 0.5,
       glowRadius: (json['glow_radius'] as num?)?.toDouble() ?? 8.0,
-      transparency: (json['transparency'] as num?)?.toDouble() ?? 0.85,
+      transparency: (json['transparency'] as num?)?.toDouble() ?? 0.92,
+      laneOpacity: (json['lane_opacity'] as num?)?.toDouble() ?? 0.55,
       lookaheadMs: (json['lookahead_ms'] as num?)?.toDouble() ?? 2000.0,
       showBeforePlay: json['show_before_play'] ?? true,
       showDuringPlay: json['show_during_play'] ?? true,

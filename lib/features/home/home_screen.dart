@@ -62,7 +62,7 @@ class HomeScreen extends StatelessWidget {
 
   void _createNewProject(BuildContext context) {
     provider.createProject('Untitled Project');
-    Navigator.pushNamed(context, '/import');
+    Navigator.pushNamed(context, '/workspace');
   }
 
   Future<void> _openProject(BuildContext context) async {
