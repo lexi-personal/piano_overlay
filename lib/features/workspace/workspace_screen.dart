@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../services/project_provider.dart';
+import '../../services/ableton/ableton_parser.dart';
 import '../../models/overlay_style.dart';
 import '../../models/calibration.dart';
 import '../../models/midi_note.dart';
@@ -539,30 +540,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   Future<void> _importAbleton() async {
     if (!mounted) return;
-    final result = await showDialog(
+    final result = await showDialog<({List<AbletonMidiTrack> tracks, AbletonAudioFile? audio})>(
       context: context,
       builder: (_) => const AbletonImportDialog(),
     );
     if (result == null) return;
-    // result is ({tracks, audio}) record from AbletonImportDialog
-    final tracks = result.tracks as List;
+    final tracks = result.tracks;
     if (tracks.isEmpty) return;
 
     // Convert Ableton tracks to MidiFileData
     final midiTracks = <MidiTrack>[];
     for (int i = 0; i < tracks.length; i++) {
       final t = tracks[i];
-      final notes = t.notes
-          .map((n) => MidiNote(
-                pitch: n.pitch,
-                startMs: n.startMs,
-                durationMs: n.durationMs,
-                velocity: n.velocity,
-                channel: i,
-                track: i,
-              ))
-          .toList();
-      midiTracks.add(MidiTrack(name: t.name, channel: i, notes: notes));
+      // AbletonMidiTrack.notes are already MidiNote objects
+      midiTracks.add(MidiTrack(name: t.name, channel: i, notes: t.notes));
     }
     final midiData = MidiFileData(
       tracks: midiTracks,
@@ -577,8 +568,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     // If audio file selected, use it as video
     final audio = result.audio;
-    if (audio != null && audio.path != null) {
-      final audioPath = audio.path as String;
+    if (audio != null) {
+      final audioPath = audio.path;
       if (await File(audioPath).exists()) {
         widget.provider.setVideo(
           audioPath,

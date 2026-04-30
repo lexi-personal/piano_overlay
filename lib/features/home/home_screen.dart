@@ -80,16 +80,7 @@ class HomeScreen extends StatelessWidget {
     try {
       await provider.loadProject(path);
       if (!context.mounted) return;
-      // Navigate based on project state
-      if (provider.isReadyForPreview) {
-        Navigator.pushNamed(context, '/preview');
-      } else if (provider.hasCalibration) {
-        Navigator.pushNamed(context, '/sync');
-      } else if (provider.hasVideo && provider.hasMidi) {
-        Navigator.pushNamed(context, '/calibrate');
-      } else {
-        Navigator.pushNamed(context, '/import');
-      }
+      Navigator.pushNamed(context, '/workspace');
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

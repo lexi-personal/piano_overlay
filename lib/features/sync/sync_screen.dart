@@ -12,8 +12,8 @@ class SyncScreen extends StatefulWidget {
 
 class _SyncScreenState extends State<SyncScreen> {
   late double _offsetMs;
-  static const double _minOffset = -5000.0;
-  static const double _maxOffset = 5000.0;
+  static const double _minOffset = -60000.0;
+  static const double _maxOffset = 60000.0;
 
   @override
   void initState() {

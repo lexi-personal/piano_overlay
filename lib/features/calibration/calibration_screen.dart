@@ -17,6 +17,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   // The 4 corner points placed by the user (normalized 0-1 relative to widget size)
   final List<Offset> _corners = [];
   KeyboardSize _keyboardSize = KeyboardSize.keys88;
+  int _customLowest = 21;
+  int _customHighest = 108;
   bool _showGrid = true;
   bool _computing = false;
   String? _error;
@@ -271,22 +273,78 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   Widget _buildKeyboardSelector() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Keyboard: '),
-          const SizedBox(width: 8),
-          SegmentedButton<KeyboardSize>(
-            segments: KeyboardSize.values.map((size) {
-              return ButtonSegment(
-                value: size,
-                label: Text(size.label),
-              );
-            }).toList(),
-            selected: {_keyboardSize},
-            onSelectionChanged: (selected) {
-              setState(() => _keyboardSize = selected.first);
-            },
+          Row(
+            children: [
+              const Text('Keyboard: '),
+              const SizedBox(width: 8),
+              SegmentedButton<KeyboardSize>(
+                segments: KeyboardSize.values.map((size) {
+                  return ButtonSegment(
+                    value: size,
+                    label: Text(size.label),
+                  );
+                }).toList(),
+                selected: {_keyboardSize},
+                onSelectionChanged: (selected) {
+                  setState(() {
+                    _keyboardSize = selected.first;
+                    if (_keyboardSize != KeyboardSize.custom) {
+                      _customLowest = _keyboardSize.lowestNote;
+                      _customHighest = _keyboardSize.highestNote;
+                    }
+                  });
+                },
+              ),
+            ],
           ),
+          if (_keyboardSize == KeyboardSize.custom) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Lowest: ${KeyRange.noteName(_customLowest)} (MIDI $_customLowest)',
+                          style: const TextStyle(fontSize: 12)),
+                      Slider(
+                        value: _customLowest.toDouble(),
+                        min: 21,
+                        max: (_customHighest - 1).toDouble(),
+                        divisions: _customHighest - 22,
+                        onChanged: (v) => setState(() => _customLowest = v.round()),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Highest: ${KeyRange.noteName(_customHighest)} (MIDI $_customHighest)',
+                          style: const TextStyle(fontSize: 12)),
+                      Slider(
+                        value: _customHighest.toDouble(),
+                        min: (_customLowest + 1).toDouble(),
+                        max: 108,
+                        divisions: 107 - _customLowest,
+                        onChanged: (v) => setState(() => _customHighest = v.round()),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              'Range: ${KeyRange.noteName(_customLowest)} – ${KeyRange.noteName(_customHighest)} '
+              '(${KeyRange(lowestNote: _customLowest, highestNote: _customHighest).whiteKeys} white keys)',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
         ],
       ),
     );
@@ -337,37 +395,105 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     setState(() { _computing = true; _error = null; });
 
     try {
-      final bridge = NativeBridge();
-      if (!bridge.isInitialized) {
-        // Try to initialize with default paths
-        try {
-          bridge.initialize();
-        } catch (_) {
-          // If library not found, store corners without computing homography
-          setState(() => _error = 'Rust library not loaded. Calibration stored without homography.');
-          Navigator.pushNamed(context, '/sync');
-          return;
-        }
-      }
+      final keyRange = _keyboardSize == KeyboardSize.custom
+          ? KeyRange(lowestNote: _customLowest, highestNote: _customHighest)
+          : KeyRange.fromPreset(_keyboardSize);
 
-      final calibration = bridge.computeCalibration(
+      final corners = KeyboardCorners(
         topLeft: Point2D(_corners[0].dx, _corners[0].dy),
         topRight: Point2D(_corners[1].dx, _corners[1].dy),
         bottomRight: Point2D(_corners[2].dx, _corners[2].dy),
         bottomLeft: Point2D(_corners[3].dx, _corners[3].dy),
-        numKeys: _keyboardSize.totalKeys,
+      );
+
+      // Try Rust bridge first, fall back to Dart-side computation
+      CalibrationData? calibration;
+      try {
+        final bridge = NativeBridge();
+        if (bridge.isInitialized) {
+          calibration = bridge.computeCalibration(
+            topLeft: Point2D(_corners[0].dx, _corners[0].dy),
+            topRight: Point2D(_corners[1].dx, _corners[1].dy),
+            bottomRight: Point2D(_corners[2].dx, _corners[2].dy),
+            bottomLeft: Point2D(_corners[3].dx, _corners[3].dy),
+            numKeys: keyRange.totalKeys,
+          );
+        }
+      } catch (_) {
+        // Rust bridge not available, use Dart-side homography
+      }
+
+      calibration ??= CalibrationData(
+        corners: corners,
+        keyboardSize: _keyboardSize,
+        keyRange: keyRange,
+        homography: _computeDartHomography(corners, keyRange.whiteKeys),
+        keyPositions: const [],
       );
 
       widget.provider.setCalibration(calibration);
 
       if (mounted) {
-        Navigator.pushNamed(context, '/sync');
+        Navigator.pop(context);
       }
     } catch (e) {
       setState(() => _error = 'Calibration failed: $e');
     } finally {
       if (mounted) setState(() => _computing = false);
     }
+  }
+
+  /// Simple Dart-side 3x3 homography from 4 corner points.
+  List<List<double>> _computeDartHomography(KeyboardCorners corners, int whiteKeys) {
+    // Map canonical space (0..whiteKeys, 0..1) to screen coords via the 4 corners
+    // Source points (canonical): TL=(0,0), TR=(wk,0), BR=(wk,1), BL=(0,1)
+    // Dest points (screen): user's 4 corner taps
+    final wk = whiteKeys.toDouble();
+    final srcPts = [
+      [0.0, 0.0], [wk, 0.0], [wk, 1.0], [0.0, 1.0],
+    ];
+    final dstPts = [
+      [corners.topLeft.x, corners.topLeft.y],
+      [corners.topRight.x, corners.topRight.y],
+      [corners.bottomRight.x, corners.bottomRight.y],
+      [corners.bottomLeft.x, corners.bottomLeft.y],
+    ];
+
+    // Build 8x9 augmented matrix for DLT
+    final a = List.generate(8, (_) => List.filled(9, 0.0));
+    for (int i = 0; i < 4; i++) {
+      final sx = srcPts[i][0], sy = srcPts[i][1];
+      final dx = dstPts[i][0], dy = dstPts[i][1];
+      a[i * 2][0] = sx; a[i * 2][1] = sy; a[i * 2][2] = 1;
+      a[i * 2][6] = -dx * sx; a[i * 2][7] = -dx * sy; a[i * 2][8] = dx;
+      a[i * 2 + 1][3] = sx; a[i * 2 + 1][4] = sy; a[i * 2 + 1][5] = 1;
+      a[i * 2 + 1][6] = -dy * sx; a[i * 2 + 1][7] = -dy * sy; a[i * 2 + 1][8] = dy;
+    }
+
+    // Gaussian elimination
+    for (int col = 0; col < 8; col++) {
+      int maxRow = col;
+      for (int row = col + 1; row < 8; row++) {
+        if (a[row][col].abs() > a[maxRow][col].abs()) maxRow = row;
+      }
+      final temp = a[col]; a[col] = a[maxRow]; a[maxRow] = temp;
+      final pivot = a[col][col];
+      if (pivot.abs() < 1e-12) continue;
+      for (int j = col; j < 9; j++) a[col][j] /= pivot;
+      for (int row = 0; row < 8; row++) {
+        if (row == col) continue;
+        final factor = a[row][col];
+        for (int j = col; j < 9; j++) a[row][j] -= factor * a[col][j];
+      }
+    }
+
+    // Extract h values: h[i] = a[i][8], h8 = 1
+    final h = List.generate(8, (i) => a[i][8]);
+    return [
+      [h[0], h[1], h[2]],
+      [h[3], h[4], h[5]],
+      [h[6], h[7], 1.0],
+    ];
   }
 }
 
