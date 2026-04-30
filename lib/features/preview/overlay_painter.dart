@@ -6,19 +6,18 @@ import 'package:flutter/material.dart';
 /// This painter does NOT compute geometry — it only draws the quads/colors/glow
 /// that the Rust engine has already computed. This guarantees preview/export parity.
 class OverlayPainter extends CustomPainter {
-  /// Pre-computed note strip quads from the Rust overlay engine.
   final List<NoteStripRenderData> strips;
-
-  /// Pre-computed key highlights from the Rust overlay engine.
   final List<KeyHighlightRenderData> keyHighlights;
-
-  /// Background dim amount (0.0 = none, 1.0 = fully black).
   final double backgroundDim;
+  final List<Offset>? fallLaneQuad;
+  final double laneOpacity;
 
   OverlayPainter({
     required this.strips,
     required this.keyHighlights,
     this.backgroundDim = 0.0,
+    this.fallLaneQuad,
+    this.laneOpacity = 0.55,
   });
 
   @override
@@ -30,6 +29,26 @@ class OverlayPainter extends CustomPainter {
       canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), dimPaint);
     }
 
+    // Draw the fall-lane background
+    if (fallLaneQuad != null && fallLaneQuad!.length == 4 && laneOpacity > 0) {
+      final lanePath = Path()
+        ..moveTo(fallLaneQuad![0].dx, fallLaneQuad![0].dy)
+        ..lineTo(fallLaneQuad![1].dx, fallLaneQuad![1].dy)
+        ..lineTo(fallLaneQuad![2].dx, fallLaneQuad![2].dy)
+        ..lineTo(fallLaneQuad![3].dx, fallLaneQuad![3].dy)
+        ..close();
+      final lanePaint = Paint()
+        ..color = Colors.black.withOpacity(laneOpacity)
+        ..style = PaintingStyle.fill;
+      canvas.drawPath(lanePath, lanePaint);
+      // Subtle edge at keyboard top
+      final edgePaint = Paint()
+        ..color = Colors.white.withOpacity(0.15)
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(fallLaneQuad![2], fallLaneQuad![3], edgePaint);
+    }
+
     // Draw key highlights first (below strips)
     for (final highlight in keyHighlights) {
       _drawQuad(canvas, highlight.quad, highlight.color, null, 0);
@@ -37,13 +56,10 @@ class OverlayPainter extends CustomPainter {
 
     // Draw note strips with glow
     for (final strip in strips) {
-      // Draw glow layer (slightly larger, blurred)
       if (strip.glowRadius > 0 && strip.glowIntensity > 0) {
         final glowColor = strip.color.withOpacity(strip.color.opacity * strip.glowIntensity * 0.6);
         _drawQuad(canvas, strip.quad, glowColor, strip.glowRadius, 0);
       }
-
-      // Draw main strip
       _drawQuad(canvas, strip.quad, strip.color, null, 0);
     }
   }
@@ -150,14 +166,25 @@ class OverlayFrameData {
   final List<NoteStripRenderData> strips;
   final List<KeyHighlightRenderData> keyHighlights;
   final double timestampMs;
+  final List<Offset>? fallLaneQuad;
 
   const OverlayFrameData({
     required this.strips,
     required this.keyHighlights,
     required this.timestampMs,
+    this.fallLaneQuad,
   });
 
   factory OverlayFrameData.fromJson(Map<String, dynamic> json) {
+    List<Offset>? quad;
+    if (json['fall_lane_quad'] != null) {
+      quad = (json['fall_lane_quad'] as List)
+          .map((p) => Offset(
+                (p['x'] as num).toDouble(),
+                (p['y'] as num).toDouble(),
+              ))
+          .toList();
+    }
     return OverlayFrameData(
       strips: (json['strips'] as List)
           .map((s) => NoteStripRenderData.fromJson(s))
@@ -166,6 +193,7 @@ class OverlayFrameData {
           .map((k) => KeyHighlightRenderData.fromJson(k))
           .toList(),
       timestampMs: (json['timestamp_ms'] as num).toDouble(),
+      fallLaneQuad: quad,
     );
   }
 }

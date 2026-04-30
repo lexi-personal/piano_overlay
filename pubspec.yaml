@@ -42,6 +42,9 @@ dependencies:
   # File picker for import dialogs
   file_picker: ^8.0.0
 
+  # XML parsing for Ableton .als files
+  xml: ^6.5.0
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.6

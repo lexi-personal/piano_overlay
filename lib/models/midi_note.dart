@@ -104,11 +104,28 @@ class MidiFileData {
     );
   }
 
+  /// All notes across all tracks.
+  List<MidiNote> get allNotes {
+    return tracks.expand((t) => t.notes).toList();
+  }
+
   /// All notes across all tracks, sorted by start time.
   List<MidiNote> get allNotesSorted {
-    final notes = tracks.expand((t) => t.notes).toList();
+    final notes = allNotes;
     notes.sort((a, b) => a.startMs.compareTo(b.startMs));
     return notes;
+  }
+
+  /// Create an empty MidiFileData.
+  factory MidiFileData.empty() {
+    return const MidiFileData(
+      tracks: [],
+      durationMs: 0,
+      noteCount: 0,
+      initialTempoBpm: 120,
+      ticksPerBeat: 480,
+      trackCount: 0,
+    );
   }
 }
 

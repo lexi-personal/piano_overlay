@@ -4,6 +4,8 @@ import 'dart:ui';
 class OverlayStyle {
   final Color whiteKeyColor;
   final Color blackKeyColor;
+  final Color leftHandColor;
+  final Color rightHandColor;
   final double stripThickness;
   final double glowStrength;
   final double glowRadius;
@@ -16,14 +18,18 @@ class OverlayStyle {
   final bool keyHighlightEnabled;
   final Color keyHighlightColor;
   final double backgroundDim;
+  final double laneOpacity;
+  final bool useHandColors;
 
   const OverlayStyle({
-    this.whiteKeyColor = const Color(0xD94FC3F7),
-    this.blackKeyColor = const Color(0xD9FF7043),
+    this.whiteKeyColor = const Color(0xFF4FC3F7),
+    this.blackKeyColor = const Color(0xFFFF7043),
+    this.leftHandColor = const Color(0xFF4FC3F7),
+    this.rightHandColor = const Color(0xFFFF7043),
     this.stripThickness = 0.8,
     this.glowStrength = 0.5,
     this.glowRadius = 8.0,
-    this.transparency = 0.85,
+    this.transparency = 0.92,
     this.lookaheadMs = 2000.0,
     this.showBeforePlay = true,
     this.showDuringPlay = true,
@@ -32,11 +38,15 @@ class OverlayStyle {
     this.keyHighlightEnabled = true,
     this.keyHighlightColor = const Color(0x40FFFFFF),
     this.backgroundDim = 0.0,
+    this.laneOpacity = 0.55,
+    this.useHandColors = false,
   });
 
   OverlayStyle copyWith({
     Color? whiteKeyColor,
     Color? blackKeyColor,
+    Color? leftHandColor,
+    Color? rightHandColor,
     double? stripThickness,
     double? glowStrength,
     double? glowRadius,
@@ -49,10 +59,14 @@ class OverlayStyle {
     bool? keyHighlightEnabled,
     Color? keyHighlightColor,
     double? backgroundDim,
+    double? laneOpacity,
+    bool? useHandColors,
   }) {
     return OverlayStyle(
       whiteKeyColor: whiteKeyColor ?? this.whiteKeyColor,
       blackKeyColor: blackKeyColor ?? this.blackKeyColor,
+      leftHandColor: leftHandColor ?? this.leftHandColor,
+      rightHandColor: rightHandColor ?? this.rightHandColor,
       stripThickness: stripThickness ?? this.stripThickness,
       glowStrength: glowStrength ?? this.glowStrength,
       glowRadius: glowRadius ?? this.glowRadius,
@@ -65,12 +79,16 @@ class OverlayStyle {
       keyHighlightEnabled: keyHighlightEnabled ?? this.keyHighlightEnabled,
       keyHighlightColor: keyHighlightColor ?? this.keyHighlightColor,
       backgroundDim: backgroundDim ?? this.backgroundDim,
+      laneOpacity: laneOpacity ?? this.laneOpacity,
+      useHandColors: useHandColors ?? this.useHandColors,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'white_key_color': _colorToHex(whiteKeyColor),
         'black_key_color': _colorToHex(blackKeyColor),
+        'left_hand_color': _colorToHex(leftHandColor),
+        'right_hand_color': _colorToHex(rightHandColor),
         'strip_thickness': stripThickness,
         'glow_strength': glowStrength,
         'glow_radius': glowRadius,
@@ -83,6 +101,8 @@ class OverlayStyle {
         'key_highlight_enabled': keyHighlightEnabled,
         'key_highlight_color': _colorToHex(keyHighlightColor),
         'background_dim': backgroundDim,
+        'lane_opacity': laneOpacity,
+        'use_hand_colors': useHandColors,
       };
 
   static String _colorToHex(Color c) =>

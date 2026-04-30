@@ -6,6 +6,7 @@ import 'features/sync/sync_screen.dart';
 import 'features/style/style_screen.dart';
 import 'features/preview/preview_screen.dart';
 import 'features/export/export_screen.dart';
+import 'features/workspace/workspace_screen.dart';
 import 'services/project_provider.dart';
 
 class PianoOverlayApp extends StatelessWidget {
@@ -31,6 +32,7 @@ class PianoOverlayApp extends StatelessWidget {
             '/style': (context) => StyleScreen(provider: projectProvider),
             '/preview': (context) => PreviewScreen(provider: projectProvider),
             '/export': (context) => ExportScreen(provider: projectProvider),
+            '/workspace': (context) => WorkspaceScreen(provider: projectProvider),
           },
         );
       },
