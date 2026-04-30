@@ -34,9 +34,9 @@ class OverlayGeometry {
     final effectiveTime = _applySync(timestampMs, sync);
     final lookahead = style.lookaheadMs;
 
-    final lowestNote = calibration.keyboardSize.lowestNote;
-    final highestNote = calibration.keyboardSize.highestNote;
-    final whiteKeys = calibration.keyboardSize.whiteKeys;
+    final lowestNote = calibration.keyRange.lowestNote;
+    final highestNote = calibration.keyRange.highestNote;
+    final whiteKeys = calibration.keyRange.whiteKeys;
 
     // Get scaled homography for current display dimensions.
     final h = _getScaledHomography(
@@ -111,7 +111,12 @@ class OverlayGeometry {
       final topLeft = _lanePoint(kbLeft, kbRight, laneTopLeft, laneTopRight, fxLeft, tTop);
 
       // Determine color.
-      final baseColor = isBlack ? style.blackKeyColor : style.whiteKeyColor;
+      Color baseColor;
+      if (style.useHandColors) {
+        baseColor = note.track == 0 ? style.leftHandColor : style.rightHandColor;
+      } else {
+        baseColor = isBlack ? style.blackKeyColor : style.whiteKeyColor;
+      }
       var opacity = style.transparency;
 
       // Fade notes that have already ended (trail effect).
@@ -207,7 +212,7 @@ class OverlayGeometry {
     ];
 
     return _computeHomography(
-      calibration.keyboardSize.whiteKeys,
+      calibration.keyRange.whiteKeys,
       scaledCorners,
     );
   }

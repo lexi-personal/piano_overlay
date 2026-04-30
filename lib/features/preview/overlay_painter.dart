@@ -41,12 +41,12 @@ class OverlayPainter extends CustomPainter {
         ..color = Colors.black.withOpacity(laneOpacity)
         ..style = PaintingStyle.fill;
       canvas.drawPath(lanePath, lanePaint);
-      // Subtle edge at keyboard top
+      // Subtle edge line at keyboard top
       final edgePaint = Paint()
         ..color = Colors.white.withOpacity(0.15)
         ..strokeWidth = 1.5
         ..style = PaintingStyle.stroke;
-      canvas.drawLine(fallLaneQuad![2], fallLaneQuad![3], edgePaint);
+      canvas.drawLine(fallLaneQuad![0], fallLaneQuad![1], edgePaint);
     }
 
     // Draw key highlights first (below strips)
