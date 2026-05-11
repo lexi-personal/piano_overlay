@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'app.dart';
@@ -11,9 +12,9 @@ void main() {
   // Initialize native bridge early so all screens can use it
   try {
     NativeBridge().initialize();
-    debugPrint('NativeBridge: loaded successfully');
+    if (kDebugMode) debugPrint('NativeBridge: loaded successfully');
   } catch (e) {
-    debugPrint('NativeBridge: failed to load: $e');
+    if (kDebugMode) debugPrint('NativeBridge: failed to load: $e');
   }
 
   runApp(PianoOverlayApp(projectProvider: ProjectProvider()));

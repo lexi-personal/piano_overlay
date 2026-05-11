@@ -4,19 +4,22 @@ use super::types::{CalibrationData, KeyPosition, KeyboardCorners, KeyboardSize, 
 
 /// Compute the full calibration from user-placed corners and keyboard size.
 /// Returns calibration data with homography matrix and all key positions.
+/// Returns an error if corners are degenerate (collinear, overlapping, or too close together).
 pub fn compute_calibration(
     corners: &KeyboardCorners,
     keyboard_size: KeyboardSize,
-) -> CalibrationData {
+) -> Result<CalibrationData, String> {
+    // Validate corners are not degenerate
+    validate_corners(corners)?;
+
     let white_keys = keyboard_size.white_keys() as f64;
 
     // Canonical keyboard rectangle: (0,0) to (white_keys, 1.0)
-    // where x=0 is leftmost white key, x=white_keys is rightmost
     let src = [
-        Point2D::new(0.0, 0.0),           // top-left
-        Point2D::new(white_keys, 0.0),     // top-right
-        Point2D::new(white_keys, 1.0),     // bottom-right
-        Point2D::new(0.0, 1.0),            // bottom-left
+        Point2D::new(0.0, 0.0),
+        Point2D::new(white_keys, 0.0),
+        Point2D::new(white_keys, 1.0),
+        Point2D::new(0.0, 1.0),
     ];
 
     let dst = [
@@ -26,24 +29,62 @@ pub fn compute_calibration(
         corners.bottom_left,
     ];
 
-    let homography = compute_homography(&src, &dst);
+    let homography = compute_homography(&src, &dst)?;
     let key_positions = compute_key_positions(&homography, keyboard_size);
 
-    CalibrationData {
+    Ok(CalibrationData {
         corners: corners.clone(),
         keyboard_size,
         homography,
         key_positions,
+    })
+}
+
+/// Validate that corners form a reasonable quadrilateral.
+fn validate_corners(corners: &KeyboardCorners) -> Result<(), String> {
+    let pts = [
+        corners.top_left,
+        corners.top_right,
+        corners.bottom_right,
+        corners.bottom_left,
+    ];
+
+    // Check for overlapping points (distance < 5 pixels)
+    for i in 0..4 {
+        for j in (i + 1)..4 {
+            let dx = pts[i].x - pts[j].x;
+            let dy = pts[i].y - pts[j].y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < 5.0 {
+                return Err(format!(
+                    "Corner points {} and {} are too close together ({:.1}px). Spread them apart.",
+                    i + 1, j + 1, dist
+                ));
+            }
+        }
     }
+
+    // Check for collinearity using cross-product area
+    let area = 0.5 * ((pts[1].x - pts[0].x) * (pts[3].y - pts[0].y)
+        - (pts[3].x - pts[0].x) * (pts[1].y - pts[0].y)).abs()
+        + 0.5 * ((pts[2].x - pts[1].x) * (pts[3].y - pts[1].y)
+        - (pts[3].x - pts[1].x) * (pts[2].y - pts[1].y)).abs();
+
+    if area < 100.0 {
+        return Err(
+            "Corner points are nearly collinear (area too small). \
+             Place corners at the four corners of the keyboard."
+                .to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 /// Compute 3x3 homography matrix mapping src points to dst points.
 /// Uses the direct 8×8 linear system with h33=1 constraint.
-fn compute_homography(src: &[Point2D; 4], dst: &[Point2D; 4]) -> [[f64; 3]; 3] {
-    // With h33 = 1, we have 8 unknowns (h11..h32).
-    // Each point pair gives 2 equations. Rearranged as A*h = b.
-    // Unknowns: [h11, h12, h13, h21, h22, h23, h31, h32]
-
+/// Returns error if the system is singular (degenerate point configuration).
+fn compute_homography(src: &[Point2D; 4], dst: &[Point2D; 4]) -> Result<[[f64; 3]; 3], String> {
     let mut a_data = [0.0f64; 64]; // 8×8
     let mut b_data = [0.0f64; 8];
 
@@ -53,9 +94,6 @@ fn compute_homography(src: &[Point2D; 4], dst: &[Point2D; 4]) -> [[f64; 3]; 3] {
         let row1 = i * 2;
         let row2 = i * 2 + 1;
 
-        // x' = (h11*x + h12*y + h13) / (h31*x + h32*y + 1)
-        // x'*(h31*x + h32*y + 1) = h11*x + h12*y + h13
-        // h11*x + h12*y + h13 - h31*x'*x - h32*x'*y = x'
         a_data[row1 * 8 + 0] = x;
         a_data[row1 * 8 + 1] = y;
         a_data[row1 * 8 + 2] = 1.0;
@@ -63,8 +101,6 @@ fn compute_homography(src: &[Point2D; 4], dst: &[Point2D; 4]) -> [[f64; 3]; 3] {
         a_data[row1 * 8 + 7] = -xp * y;
         b_data[row1] = xp;
 
-        // y' = (h21*x + h22*y + h23) / (h31*x + h32*y + 1)
-        // h21*x + h22*y + h23 - h31*y'*x - h32*y'*y = y'
         a_data[row2 * 8 + 3] = x;
         a_data[row2 * 8 + 4] = y;
         a_data[row2 * 8 + 5] = 1.0;
@@ -76,10 +112,22 @@ fn compute_homography(src: &[Point2D; 4], dst: &[Point2D; 4]) -> [[f64; 3]; 3] {
     let a_mat = DMatrix::from_row_slice(8, 8, &a_data);
     let b_vec = DVector::from_row_slice(&b_data);
 
-    let h_vec = a_mat
-        .lu()
-        .solve(&b_vec)
-        .unwrap_or_else(|| DVector::zeros(8));
+    let lu = a_mat.clone().lu();
+    let h_vec = lu.solve(&b_vec).ok_or_else(|| {
+        "Calibration failed: corner points form a degenerate configuration \
+         (singular matrix). Try repositioning corners so they form a clear quadrilateral."
+            .to_string()
+    })?;
+
+    // Check solution quality: verify the determinant is not near-zero
+    let det = lu.determinant();
+    if det.abs() < 1e-10 {
+        return Err(
+            "Calibration failed: corner points are nearly degenerate \
+             (matrix determinant near zero). Reposition corners for better accuracy."
+                .to_string(),
+        );
+    }
 
     let mut h = [[0.0f64; 3]; 3];
     h[0][0] = h_vec[0];
@@ -92,7 +140,7 @@ fn compute_homography(src: &[Point2D; 4], dst: &[Point2D; 4]) -> [[f64; 3]; 3] {
     h[2][1] = h_vec[7];
     h[2][2] = 1.0;
 
-    h
+    Ok(h)
 }
 
 /// Transform a point from canonical space to screen space using the homography.
@@ -212,7 +260,8 @@ mod tests {
             Point2D::new(100.0, 50.0),
             Point2D::new(0.0, 50.0),
         ];
-        let h = compute_homography(&src, &src);
+        let h = compute_homography(&src, &src)
+            .expect("identity homography should succeed");
 
         let p = Point2D::new(50.0, 25.0);
         let result = transform_point(&h, &p);
@@ -235,7 +284,8 @@ mod tests {
             Point2D::new(200.0, 100.0),
             Point2D::new(0.0, 100.0),
         ];
-        let h = compute_homography(&src, &dst);
+        let h = compute_homography(&src, &dst)
+            .expect("scale homography should succeed");
 
         let p = transform_point(&h, &Point2D::new(0.5, 0.5));
         assert!((p.x - 100.0).abs() < 0.1);
@@ -250,7 +300,8 @@ mod tests {
             bottom_right: Point2D::new(1920.0, 200.0),
             bottom_left: Point2D::new(0.0, 200.0),
         };
-        let cal = compute_calibration(&corners, KeyboardSize::Keys88);
+        let cal = compute_calibration(&corners, KeyboardSize::Keys88)
+            .expect("calibration should succeed");
         assert_eq!(cal.key_positions.len(), 88);
 
         // First key (A0 = note 21) should be near left edge

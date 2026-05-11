@@ -56,7 +56,8 @@ fn test_full_export_pipeline() {
         bottom_right: Point2D::new(150.0, 85.0),
         bottom_left: Point2D::new(10.0, 85.0),
     };
-    let calibration = compute_calibration(&corners, KeyboardSize::Keys88);
+    let calibration = compute_calibration(&corners, KeyboardSize::Keys88)
+        .expect("test calibration should succeed");
 
     // Create some MIDI notes
     let notes = vec![

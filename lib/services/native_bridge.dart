@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:ffi/ffi.dart';
 import '../models/midi_note.dart';
 import '../models/video_metadata.dart';
@@ -90,32 +89,38 @@ class NativeBridge {
   MidiFileData parseMidi(String path) {
     _ensureInitialized();
     final pathPtr = path.toNativeUtf8();
-    final resultPtr = _parseMidi(pathPtr);
-    final jsonStr = resultPtr.toDartString();
-    calloc.free(pathPtr);
-    _freeString(resultPtr);
-
-    final json = jsonDecode(jsonStr) as Map<String, dynamic>;
-    if (json.containsKey('error')) {
-      throw Exception('MIDI parse error: ${json['error']}');
+    Pointer<Utf8>? resultPtr;
+    try {
+      resultPtr = _parseMidi(pathPtr);
+      final jsonStr = resultPtr.toDartString();
+      final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (json.containsKey('error')) {
+        throw Exception('MIDI parse error: ${json['error']}');
+      }
+      return MidiFileData.fromJson(json);
+    } finally {
+      calloc.free(pathPtr);
+      if (resultPtr != null) _freeString(resultPtr);
     }
-    return MidiFileData.fromJson(json);
   }
 
   /// Extract video metadata using ffprobe (via Rust).
   VideoMetadata extractVideoMetadata(String path) {
     _ensureInitialized();
     final pathPtr = path.toNativeUtf8();
-    final resultPtr = _extractVideoMetadata(pathPtr);
-    final jsonStr = resultPtr.toDartString();
-    calloc.free(pathPtr);
-    _freeString(resultPtr);
-
-    final json = jsonDecode(jsonStr) as Map<String, dynamic>;
-    if (json.containsKey('error')) {
-      throw Exception('Video metadata error: ${json['error']}');
+    Pointer<Utf8>? resultPtr;
+    try {
+      resultPtr = _extractVideoMetadata(pathPtr);
+      final jsonStr = resultPtr.toDartString();
+      final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (json.containsKey('error')) {
+        throw Exception('Video metadata error: ${json['error']}');
+      }
+      return VideoMetadata.fromJson(json);
+    } finally {
+      calloc.free(pathPtr);
+      if (resultPtr != null) _freeString(resultPtr);
     }
-    return VideoMetadata.fromJson(json);
   }
 
   /// Compute keyboard calibration from corner points and key count.
@@ -138,16 +143,19 @@ class NativeBridge {
     });
 
     final inputPtr = input.toNativeUtf8();
-    final resultPtr = _computeCalibration(inputPtr);
-    final jsonStr = resultPtr.toDartString();
-    calloc.free(inputPtr);
-    _freeString(resultPtr);
-
-    final json = jsonDecode(jsonStr) as Map<String, dynamic>;
-    if (json.containsKey('error')) {
-      throw Exception('Calibration error: ${json['error']}');
+    Pointer<Utf8>? resultPtr;
+    try {
+      resultPtr = _computeCalibration(inputPtr);
+      final jsonStr = resultPtr.toDartString();
+      final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (json.containsKey('error')) {
+        throw Exception('Calibration error: ${json['error']}');
+      }
+      return CalibrationData.fromJson(json);
+    } finally {
+      calloc.free(inputPtr);
+      if (resultPtr != null) _freeString(resultPtr);
     }
-    return CalibrationData.fromJson(json);
   }
 
   /// Compute overlay frame for a given timestamp.
@@ -169,16 +177,19 @@ class NativeBridge {
     });
 
     final inputPtr = input.toNativeUtf8();
-    final resultPtr = _computeOverlayFrame(inputPtr);
-    final jsonStr = resultPtr.toDartString();
-    calloc.free(inputPtr);
-    _freeString(resultPtr);
-
-    final json = jsonDecode(jsonStr) as Map<String, dynamic>;
-    if (json.containsKey('error')) {
-      throw Exception('Overlay frame error: ${json['error']}');
+    Pointer<Utf8>? resultPtr;
+    try {
+      resultPtr = _computeOverlayFrame(inputPtr);
+      final jsonStr = resultPtr.toDartString();
+      final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (json.containsKey('error')) {
+        throw Exception('Overlay frame error: ${json['error']}');
+      }
+      return OverlayFrameData.fromJson(json);
+    } finally {
+      calloc.free(inputPtr);
+      if (resultPtr != null) _freeString(resultPtr);
     }
-    return OverlayFrameData.fromJson(json);
   }
 
   /// Check if FFmpeg is available on this system.
@@ -196,11 +207,15 @@ class NativeBridge {
     _ensureInitialized();
     final inputStr = jsonEncode(config);
     final inputPtr = inputStr.toNativeUtf8();
-    final resultPtr = _startExport(inputPtr);
-    final jsonStr = resultPtr.toDartString();
-    calloc.free(inputPtr);
-    _freeString(resultPtr);
-    return jsonDecode(jsonStr) as Map<String, dynamic>;
+    Pointer<Utf8>? resultPtr;
+    try {
+      resultPtr = _startExport(inputPtr);
+      final jsonStr = resultPtr.toDartString();
+      return jsonDecode(jsonStr) as Map<String, dynamic>;
+    } finally {
+      calloc.free(inputPtr);
+      if (resultPtr != null) _freeString(resultPtr);
+    }
   }
 
   /// Save project JSON to a .pvproj file via Rust.
@@ -208,14 +223,17 @@ class NativeBridge {
     _ensureInitialized();
     final input = jsonEncode({'path': path, 'project': projectJson});
     final inputPtr = input.toNativeUtf8();
-    final resultPtr = _saveProject(inputPtr);
-    final jsonStr = resultPtr.toDartString();
-    calloc.free(inputPtr);
-    _freeString(resultPtr);
-
-    final result = jsonDecode(jsonStr) as Map<String, dynamic>;
-    if (result.containsKey('error')) {
-      throw Exception('Save failed: ${result['error']}');
+    Pointer<Utf8>? resultPtr;
+    try {
+      resultPtr = _saveProject(inputPtr);
+      final jsonStr = resultPtr.toDartString();
+      final result = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (result.containsKey('error')) {
+        throw Exception('Save failed: ${result['error']}');
+      }
+    } finally {
+      calloc.free(inputPtr);
+      if (resultPtr != null) _freeString(resultPtr);
     }
   }
 
@@ -223,16 +241,19 @@ class NativeBridge {
   Map<String, dynamic> loadProjectFile(String path) {
     _ensureInitialized();
     final pathPtr = path.toNativeUtf8();
-    final resultPtr = _loadProject(pathPtr);
-    final jsonStr = resultPtr.toDartString();
-    calloc.free(pathPtr);
-    _freeString(resultPtr);
-
-    final result = jsonDecode(jsonStr) as Map<String, dynamic>;
-    if (result.containsKey('error')) {
-      throw Exception('Load failed: ${result['error']}');
+    Pointer<Utf8>? resultPtr;
+    try {
+      resultPtr = _loadProject(pathPtr);
+      final jsonStr = resultPtr.toDartString();
+      final result = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (result.containsKey('error')) {
+        throw Exception('Load failed: ${result['error']}');
+      }
+      return result;
+    } finally {
+      calloc.free(pathPtr);
+      if (resultPtr != null) _freeString(resultPtr);
     }
-    return result;
   }
 
   /// Fallback: extract video metadata using ffprobe subprocess (no Rust needed).
@@ -331,8 +352,6 @@ class NativeBridge {
       return DynamicLibrary.open('libpiano_overlay_native.dylib');
     } else if (Platform.isWindows) {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
-      debugPrint('NativeBridge: exe dir = $exeDir');
-      debugPrint('NativeBridge: working dir = ${Directory.current.path}');
       final candidates = [
         '$exeDir\\piano_overlay_native.dll',
         'piano_overlay_native.dll',
@@ -340,9 +359,7 @@ class NativeBridge {
         'native\\target\\debug\\piano_overlay_native.dll',
       ];
       for (final path in candidates) {
-        final exists = File(path).existsSync();
-        debugPrint('NativeBridge: checking $path -> $exists');
-        if (exists) {
+        if (File(path).existsSync()) {
           return DynamicLibrary.open(path);
         }
       }

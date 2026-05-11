@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../services/project_provider.dart';
@@ -29,9 +30,8 @@ class _ImportScreenState extends State<ImportScreen> {
     if (_bridge.isInitialized) return;
     try {
       _bridge.initialize();
-      debugPrint('NativeBridge: initialized successfully');
     } catch (e) {
-      debugPrint('NativeBridge: failed to initialize: $e');
+      if (kDebugMode) debugPrint('NativeBridge: failed to initialize: $e');
     }
   }
 

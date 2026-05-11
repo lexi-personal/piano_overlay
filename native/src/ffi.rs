@@ -83,7 +83,8 @@ pub extern "C" fn ffi_compute_calibration(input_json: *const c_char) -> *mut c_c
             _ => KeyboardSize::Keys88,
         };
 
-        let calibration = compute_calibration(&corners, size);
+        let calibration = compute_calibration(&corners, size)
+            .map_err(|e| e.to_string())?;
         serde_json::to_string(&calibration).map_err(|e| e.to_string())
     })();
 
