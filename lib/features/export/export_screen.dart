@@ -21,6 +21,41 @@ class _ExportScreenState extends State<ExportScreen> {
   String? _errorMessage;
   String _outputPath = '';
   String _quality = 'high';
+  Isolate? _exportIsolate;
+  ReceivePort? _receivePort;
+  bool _ffmpegAvailable = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFfmpegAvailability();
+  }
+
+  Future<void> _checkFfmpegAvailability() async {
+    try {
+      final bridge = NativeBridge();
+      if (!bridge.isInitialized) return;
+      final result = bridge.checkFfmpeg();
+      if (mounted) {
+        setState(() => _ffmpegAvailable = result['available'] == true);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _ffmpegAvailable = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _cancelExport();
+    super.dispose();
+  }
+
+  void _cancelExport() {
+    _exportIsolate?.kill(priority: Isolate.immediate);
+    _exportIsolate = null;
+    _receivePort?.close();
+    _receivePort = null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,11 +66,13 @@ class _ExportScreenState extends State<ExportScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (!_ffmpegAvailable && _state == ExportState.idle)
+              _buildFfmpegWarning(),
             if (_state == ExportState.idle) ...[
               _buildSettings(),
               const SizedBox(height: 32),
               FilledButton.icon(
-                onPressed: widget.provider.isReadyForExport ? _startExport : null,
+                onPressed: (widget.provider.isReadyForExport && _ffmpegAvailable) ? _startExport : null,
                 icon: const Icon(Icons.movie_creation),
                 label: const Text('Export Video with Overlay'),
               ),
@@ -52,6 +89,31 @@ class _ExportScreenState extends State<ExportScreen> {
               _buildProgress(),
             if (_state == ExportState.complete) _buildSuccess(),
             if (_state == ExportState.failed) _buildError(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFfmpegWarning() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.red.shade900.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.red.shade700),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.red, size: 20),
+            SizedBox(width: 8),
+            Expanded(child: Text(
+              'FFmpeg is not installed or not found in PATH. '
+              'Install FFmpeg to enable video export.',
+              style: TextStyle(color: Colors.red, fontSize: 13),
+            )),
           ],
         ),
       ),
@@ -131,8 +193,13 @@ class _ExportScreenState extends State<ExportScreen> {
             const SizedBox(height: 16),
             LinearProgressIndicator(value: _progress / 100),
             const SizedBox(height: 24),
-            OutlinedButton(onPressed: () => setState(() => _state = ExportState.cancelled),
-              child: const Text('Cancel')),
+            OutlinedButton(
+              onPressed: () {
+                _cancelExport();
+                setState(() => _state = ExportState.cancelled);
+              },
+              child: const Text('Cancel'),
+            ),
           ],
         ),
       ),
@@ -187,8 +254,12 @@ class _ExportScreenState extends State<ExportScreen> {
     final project = widget.provider.project;
     if (project == null) return;
 
-    // Ask user for output path
-    final baseName = project.videoPath!.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
+    // Extract base name using platform-aware path separator
+    final videoPath = project.videoPath!;
+    final baseName = videoPath
+        .split(RegExp(r'[/\\]'))
+        .last
+        .replaceAll(RegExp(r'\.[^.]+$'), '');
     final outputFile = await FilePicker.platform.saveFile(
       dialogTitle: 'Save Exported Video',
       fileName: '${baseName}_overlay.mp4',
@@ -201,7 +272,6 @@ class _ExportScreenState extends State<ExportScreen> {
     setState(() { _state = ExportState.preparing; _progress = 0; _errorMessage = null; });
 
     try {
-      // Build export config as JSON for the Rust pipeline
       final config = {
         'input_video_path': project.videoPath,
         'output_path': _outputPath,
@@ -218,32 +288,33 @@ class _ExportScreenState extends State<ExportScreen> {
 
       setState(() => _state = ExportState.encoding);
 
-      // Run export in an isolate to avoid blocking the UI
-      final receivePort = ReceivePort();
-      await Isolate.spawn(
+      _receivePort = ReceivePort();
+      _exportIsolate = await Isolate.spawn(
         _exportIsolateEntry,
         _ExportIsolateMessage(
           config: config,
-          sendPort: receivePort.sendPort,
+          sendPort: _receivePort!.sendPort,
           libraryPath: _findLibraryPath(),
         ),
       );
 
-      await for (final message in receivePort) {
+      await for (final message in _receivePort!) {
         if (message is Map<String, dynamic>) {
           final status = message['status'] as String?;
           if (status == 'progress') {
             setState(() => _progress = (message['percent'] as num).toDouble());
           } else if (status == 'Complete') {
             setState(() { _state = ExportState.complete; _progress = 100; });
-            receivePort.close();
+            _receivePort?.close();
+            _exportIsolate = null;
             break;
           } else if (status == 'Failed') {
             setState(() {
               _state = ExportState.failed;
               _errorMessage = message['error'] ?? 'Unknown error';
             });
-            receivePort.close();
+            _receivePort?.close();
+            _exportIsolate = null;
             break;
           }
         }
@@ -295,6 +366,10 @@ class _ExportScreenState extends State<ExportScreen> {
       'native/target/release/libpiano_overlay_native.so',
       'libpiano_overlay_native.so',
       'native/target/release/libpiano_overlay_native.dylib',
+      'libpiano_overlay_native.dylib',
+      'native\\target\\release\\piano_overlay_native.dll',
+      'native\\target\\debug\\piano_overlay_native.dll',
+      'piano_overlay_native.dll',
     ];
     for (final p in candidates) {
       if (File(p).existsSync()) return p;
@@ -312,14 +387,24 @@ class _ExportIsolateMessage {
 }
 
 /// Entry point for the export isolate.
-/// This runs the blocking Rust export in a separate thread.
+/// Runs the blocking Rust export and sends progress updates back.
 void _exportIsolateEntry(_ExportIsolateMessage message) {
   try {
     final bridge = NativeBridge();
     bridge.initialize(libraryPath: message.libraryPath);
 
     final result = bridge.startExport(message.config);
-    message.sendPort.send(result);
+
+    // Send final result
+    final status = result['status'] as String?;
+    if (status == 'Complete' || status == 'Encoding') {
+      message.sendPort.send({'status': 'Complete'});
+    } else {
+      message.sendPort.send({
+        'status': result['status'] ?? 'Failed',
+        'error': result['error'] ?? 'Unknown error',
+      });
+    }
   } catch (e) {
     message.sendPort.send({'status': 'Failed', 'error': e.toString()});
   }

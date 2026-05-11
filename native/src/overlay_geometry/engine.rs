@@ -231,6 +231,7 @@ mod tests {
             bottom_left: Point2D::new(100.0, 300.0),
         };
         compute_calibration(&corners, KeyboardSize::Keys88)
+            .expect("test calibration should succeed")
     }
 
     fn make_test_notes() -> Vec<MidiNote> {

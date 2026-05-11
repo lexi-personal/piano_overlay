@@ -12,7 +12,9 @@ pub enum MidiParseError {
     IoError(#[from] std::io::Error),
     #[error("Failed to parse MIDI file: {0}")]
     ParseError(String),
-    #[error("Unsupported MIDI timing format (SMPTE not supported, only ticks-per-beat)")]
+    #[error("Unsupported MIDI timing format: SMPTE timecodes are not supported. \
+             This file uses absolute time frames instead of ticks-per-beat. \
+             Please re-export the MIDI file using metrical (ticks-per-beat) timing.")]
     UnsupportedTiming,
     #[error("MIDI file contains no notes")]
     NoNotes,

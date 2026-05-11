@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../services/project_provider.dart';
@@ -18,6 +19,21 @@ class _ImportScreenState extends State<ImportScreen> {
   bool _loadingVideo = false;
   bool _loadingMidi = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _tryInitBridge();
+  }
+
+  void _tryInitBridge() {
+    if (_bridge.isInitialized) return;
+    try {
+      _bridge.initialize();
+    } catch (e) {
+      if (kDebugMode) debugPrint('NativeBridge: failed to initialize: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
