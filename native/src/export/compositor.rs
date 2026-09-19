@@ -24,7 +24,8 @@ impl Compositor {
         // Apply background dimming
         if background_dim > 0.0 {
             let dim_factor = 1.0 - background_dim;
-            for pixel in buffer.chunks_exact_mut(4) {
+            let (pixels, _) = buffer.as_chunks_mut::<4>();
+            for pixel in pixels {
                 pixel[0] = (pixel[0] as f32 * dim_factor) as u8;
                 pixel[1] = (pixel[1] as f32 * dim_factor) as u8;
                 pixel[2] = (pixel[2] as f32 * dim_factor) as u8;
