@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'features/home/home_screen.dart';
-import 'features/import/import_screen.dart';
 import 'features/calibration/calibration_screen.dart';
-import 'features/sync/sync_screen.dart';
-import 'features/style/style_screen.dart';
-import 'features/preview/preview_screen.dart';
 import 'features/export/export_screen.dart';
 import 'features/workspace/workspace_screen.dart';
 import 'services/project_provider.dart';
@@ -26,11 +22,7 @@ class PianoOverlayApp extends StatelessWidget {
           initialRoute: '/',
           routes: {
             '/': (context) => HomeScreen(provider: projectProvider),
-            '/import': (context) => ImportScreen(provider: projectProvider),
             '/calibrate': (context) => CalibrationScreen(provider: projectProvider),
-            '/sync': (context) => SyncScreen(provider: projectProvider),
-            '/style': (context) => StyleScreen(provider: projectProvider),
-            '/preview': (context) => PreviewScreen(provider: projectProvider),
             '/export': (context) => ExportScreen(provider: projectProvider),
             '/workspace': (context) => WorkspaceScreen(provider: projectProvider),
           },

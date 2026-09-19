@@ -479,11 +479,15 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       final temp = a[col]; a[col] = a[maxRow]; a[maxRow] = temp;
       final pivot = a[col][col];
       if (pivot.abs() < 1e-12) continue;
-      for (int j = col; j < 9; j++) a[col][j] /= pivot;
+      for (int j = col; j < 9; j++) {
+        a[col][j] /= pivot;
+      }
       for (int row = 0; row < 8; row++) {
         if (row == col) continue;
         final factor = a[row][col];
-        for (int j = col; j < 9; j++) a[row][j] -= factor * a[col][j];
+        for (int j = col; j < 9; j++) {
+          a[row][j] -= factor * a[col][j];
+        }
       }
     }
 
@@ -553,7 +557,7 @@ class CalibrationOverlayPainter extends CustomPainter {
     }
 
     // Draw horizontal line at ~60% (black key boundary)
-    final blackKeyLine = 0.6;
+    const blackKeyLine = 0.6;
     for (int i = 0; i < 4; i++) {
       // nothing for now, just the verticals are sufficient for visual feedback
     }
