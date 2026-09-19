@@ -5,6 +5,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../services/project_provider.dart';
+import '../../services/recent_projects.dart';
+import '../../services/recovery_service.dart';
 import '../../services/native_bridge.dart';
 import '../../services/ableton/ableton_parser.dart';
 import '../../models/overlay_style.dart';
@@ -37,9 +39,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
+  late final RecoveryService _recovery;
+
   @override
   void initState() {
     super.initState();
+    _recovery = RecoveryService(widget.provider)..start();
     _player = Player();
     _videoController = VideoController(_player);
     _player.stream.playing.listen((p) => setState(() => _isPlaying = p));
@@ -53,6 +58,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   @override
   void dispose() {
+    _recovery.stop();
     _player.dispose();
     super.dispose();
   }
@@ -69,6 +75,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         if (didPop) return;
         final navigator = Navigator.of(context);
         if (await _confirmDiscard()) {
+          await RecoveryService.discard();
           navigator.pop();
         }
       },
@@ -112,6 +119,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         await _saveProjectAs();
         return;
       }
+      await _afterSave(saved);
       _showInfo('Saved to $saved');
     } catch (e) {
       _showError('Save failed: $e');
@@ -126,10 +134,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (directory == null) return;
     try {
       final path = await widget.provider.saveProject(directory);
+      await _afterSave(path);
       _showInfo('Saved to $path');
     } catch (e) {
       _showError('Save failed: $e');
     }
+  }
+
+  /// A saved project has nothing left to recover, and earns its place in the
+  /// recent projects list.
+  Future<void> _afterSave(String path) async {
+    await RecoveryService.discard();
+    await RecentProjects.record(
+        path, widget.provider.project?.name ?? 'Untitled Project');
   }
 
   /// Returns true when it is safe to leave the workspace.

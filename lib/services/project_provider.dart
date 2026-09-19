@@ -24,6 +24,10 @@ class ProjectProvider extends ChangeNotifier {
   /// True when the project has unsaved modifications.
   bool get isDirty => _isDirty;
 
+  /// Whether there is work that no project file holds yet, either because the
+  /// project has never been saved or because it changed since the last save.
+  bool get hasUnsavedWork => _project != null && (_isDirty || _savedPath == null);
+
   bool get hasVideo => _project?.hasVideo ?? false;
   bool get hasMidi => _project?.hasMidi ?? false;
   bool get hasCalibration => _project?.hasCalibration ?? false;
@@ -140,6 +144,22 @@ class ProjectProvider extends ChangeNotifier {
     _project = _projectFromJson(json);
     _savedPath = filePath;
     _isDirty = false;
+    notifyListeners();
+  }
+
+  /// Snapshot of the project in the same shape as a `.pvproj` file.
+  Map<String, dynamic> toJson() {
+    if (_project == null) throw StateError('No project to serialize');
+    return _projectToJson(_project!);
+  }
+
+  /// Adopt a project that did not come from its own file, such as a crash
+  /// recovery snapshot. It stays dirty because [savedPath] does not yet
+  /// contain these changes.
+  void restoreFromJson(Map<String, dynamic> json, {String? savedPath}) {
+    _project = _projectFromJson(json);
+    _savedPath = savedPath;
+    _isDirty = true;
     notifyListeners();
   }
 
