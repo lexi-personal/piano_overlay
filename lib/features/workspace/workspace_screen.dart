@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../../services/file_dialogs.dart';
 import '../../services/project_provider.dart';
 import '../../services/recent_projects.dart';
 import '../../services/recovery_service.dart';
@@ -130,9 +131,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   Future<void> _saveProjectAs() async {
     if (!widget.provider.hasProject) return;
-    final directory = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Choose a folder for the project file',
-    );
+    final directory = await _pick(() => FileDialogs.pickDirectory(
+          dialogTitle: 'Choose a folder for the project file',
+        ));
     if (directory == null) return;
     try {
       final path = await widget.provider.saveProject(directory);
@@ -140,6 +141,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       _showInfo('Saved to $path');
     } catch (e) {
       _showError('Save failed: $e');
+    }
+  }
+
+  /// Run a file dialog, reporting a missing system dialog instead of letting
+  /// it escape as an unhandled exception.
+  Future<String?> _pick(Future<String?> Function() open) async {
+    try {
+      return await open();
+    } on FileDialogUnavailable catch (e) {
+      _showError(e.message);
+      return null;
     }
   }
 
@@ -752,12 +764,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Future<void> _importVideo() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.video,
-      dialogTitle: 'Select Video',
-    );
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
+    final path = await _pick(() => FileDialogs.pickFile(
+          dialogTitle: 'Select Video',
+          type: FileType.video,
+        ));
     if (path == null) return;
 
     VideoMetadata metadata;
@@ -778,13 +788,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Future<void> _importMidi() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['mid', 'midi'],
-      dialogTitle: 'Select MIDI File',
-    );
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
+    final path = await _pick(() => FileDialogs.pickFile(
+          dialogTitle: 'Select MIDI File',
+          allowedExtensions: const ['mid', 'midi'],
+        ));
     if (path == null) return;
 
     if (!_bridge.isInitialized) {

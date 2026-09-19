@@ -55,12 +55,22 @@ Rust Core (Business Logic)
 - **Flutter** ≥ 3.3.0
 - **Rust** toolchain (for building the native library)
 - **FFmpeg** installed and available in PATH (required for video metadata extraction and export)
+- **Linux only**: `zenity` (or `kdialog`), which the file open/save dialogs shell out to
 
 ### Installing FFmpeg
 
 - **Linux**: `sudo apt install ffmpeg` or `sudo dnf install ffmpeg`
 - **macOS**: `brew install ffmpeg`
 - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
+
+### Installing zenity (Linux)
+
+File dialogs are provided by the desktop, not by the app. On a minimal Linux install, or under
+WSL, the helper is often missing and importing will report that it needs installing:
+
+```bash
+sudo apt install zenity   # or: sudo dnf install zenity
+```
 
 ## Building
 

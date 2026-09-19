@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
+import '../../services/file_dialogs.dart';
 import '../../services/project_provider.dart';
 import '../../services/recent_projects.dart';
 import '../../services/recovery_service.dart';
@@ -190,16 +190,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openProject(BuildContext context) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pvproj'],
-      dialogTitle: 'Open Piano Overlay Project',
-    );
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
-    if (path == null) return;
-
-    if (!context.mounted) return;
+    String? path;
+    try {
+      path = await FileDialogs.pickFile(
+        dialogTitle: 'Open Piano Overlay Project',
+        allowedExtensions: const ['pvproj'],
+      );
+    } on FileDialogUnavailable catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+    if (path == null || !context.mounted) return;
     await _openPath(context, path);
   }
 

@@ -1,7 +1,7 @@
 import 'dart:isolate';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
+import '../../services/file_dialogs.dart';
 import '../../services/project_provider.dart';
 import '../../services/native_bridge.dart';
 
@@ -260,12 +260,20 @@ class _ExportScreenState extends State<ExportScreen> {
         .split(RegExp(r'[/\\]'))
         .last
         .replaceAll(RegExp(r'\.[^.]+$'), '');
-    final outputFile = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save Exported Video',
-      fileName: '${baseName}_overlay.mp4',
-      type: FileType.custom,
-      allowedExtensions: ['mp4'],
-    );
+    String? outputFile;
+    try {
+      outputFile = await FileDialogs.saveFile(
+        dialogTitle: 'Save Exported Video',
+        fileName: '${baseName}_overlay.mp4',
+        allowedExtensions: const ['mp4'],
+      );
+    } on FileDialogUnavailable catch (e) {
+      setState(() {
+        _state = ExportState.failed;
+        _errorMessage = e.message;
+      });
+      return;
+    }
     if (outputFile == null) return;
     _outputPath = outputFile.endsWith('.mp4') ? outputFile : '$outputFile.mp4';
 

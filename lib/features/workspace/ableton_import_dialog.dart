@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
+import '../../services/file_dialogs.dart';
 import '../../services/ableton/ableton_parser.dart';
 
 /// Dialog for importing tracks from an Ableton .als file.
@@ -18,13 +18,16 @@ class _AbletonImportDialogState extends State<AbletonImportDialog> {
   int? _selectedAudioIndex;
 
   Future<void> _pickFile() async {
-    final picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['als'],
-      dialogTitle: 'Open Ableton Live Set',
-    );
-    if (picked == null || picked.files.isEmpty) return;
-    final path = picked.files.single.path;
+    String? path;
+    try {
+      path = await FileDialogs.pickFile(
+        dialogTitle: 'Open Ableton Live Set',
+        allowedExtensions: const ['als'],
+      );
+    } on FileDialogUnavailable catch (e) {
+      setState(() => _error = e.message);
+      return;
+    }
     if (path == null) return;
 
     setState(() {
