@@ -7,6 +7,7 @@ import '../models/midi_note.dart';
 import '../models/video_metadata.dart';
 import '../models/calibration.dart';
 import '../models/overlay_style.dart';
+import '../models/track_settings.dart';
 
 /// Central project state, shared across all screens.
 /// Uses ChangeNotifier for simple, framework-native state management.
@@ -87,6 +88,13 @@ class ProjectProvider extends ChangeNotifier {
   }
 
   /// Update overlay style.
+  /// Replace the timeline state for one MIDI track.
+  void updateTrackSettings(int index, TrackSettings settings) {
+    if (_project == null) return;
+    _project!.trackSettings[index] = settings;
+    _markModified();
+  }
+
   void updateStyle(OverlayStyle style) {
     if (_project == null) return;
     _project!.style = style;
@@ -179,6 +187,8 @@ class ProjectProvider extends ChangeNotifier {
       'sync': p.sync.toJson(),
       'style': p.style.toJson(),
       'export': p.export_.toJson(),
+      'track_settings': p.trackSettings
+          .map((index, settings) => MapEntry('$index', settings.toJson())),
     };
   }
 
@@ -201,7 +211,21 @@ class ProjectProvider extends ChangeNotifier {
       style: json['style'] != null
           ? _overlayStyleFromJson(json['style'])
           : const OverlayStyle(),
+      trackSettings: _trackSettingsFromJson(json['track_settings']),
     );
+  }
+
+  Map<int, TrackSettings> _trackSettingsFromJson(dynamic json) {
+    final settings = <int, TrackSettings>{};
+    if (json is! Map) return settings;
+
+    json.forEach((key, value) {
+      final index = int.tryParse('$key');
+      if (index != null && value is Map<String, dynamic>) {
+        settings[index] = TrackSettings.fromJson(value);
+      }
+    });
+    return settings;
   }
 
   Map<String, dynamic> _midiToJson(MidiFileData midi) {

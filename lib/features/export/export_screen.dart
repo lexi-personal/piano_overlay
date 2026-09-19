@@ -280,7 +280,7 @@ class _ExportScreenState extends State<ExportScreen> {
         'fps': project.video!.fps,
         'duration_ms': project.video!.durationMs,
         'quality': _quality,
-        'notes': project.midi!.allNotesSorted.map((n) => n.toJson()).toList(),
+        'notes': project.renderableNotes.map((n) => n.toJson()).toList(),
         'calibration': _buildCalibrationJson(project),
         'style': _buildStyleJson(project),
         'sync': project.sync.toJson(),

@@ -16,6 +16,7 @@ import '../../models/video_metadata.dart';
 import '../../shared/overlay_geometry.dart';
 import '../preview/overlay_painter.dart';
 import 'ableton_import_dialog.dart';
+import 'timeline_panel.dart';
 
 /// Unified workspace screen with collapsible panels, video center, and toolbar.
 class WorkspaceScreen extends StatefulWidget {
@@ -40,6 +41,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Duration _duration = Duration.zero;
 
   late final RecoveryService _recovery;
+  bool _timelineExpanded = false;
 
   @override
   void initState() {
@@ -614,7 +616,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     final frameData = OverlayGeometry.computeFrame(
       calibration: cal,
-      notes: project.midi?.allNotes ?? [],
+      notes: project.renderableNotes,
       style: style,
       sync: sync,
       timestampMs: posMs,
@@ -636,6 +638,28 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   // ── Timeline ──
 
   Widget _buildTimeline() {
+    final tracks = widget.provider.project?.midi?.tracks ?? const [];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_timelineExpanded && tracks.isNotEmpty)
+          TimelinePanel(
+            duration: _duration,
+            position: _position,
+            videoName: widget.provider.project?.videoPath?.split(Platform.pathSeparator).last,
+            tracks: tracks,
+            settingsFor: (index) => widget.provider.project!.trackFor(index),
+            onTrackChanged: (index, settings) =>
+                widget.provider.updateTrackSettings(index, settings),
+            onSeek: (position) => _player.seek(position),
+          ),
+        _buildTransport(tracks.isNotEmpty),
+      ],
+    );
+  }
+
+  Widget _buildTransport(bool hasTracks) {
     return Container(
       height: 56,
       color: Theme.of(context).colorScheme.surface,
@@ -665,6 +689,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             ),
           ),
           Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12)),
+          IconButton(
+            icon: Icon(_timelineExpanded
+                ? Icons.keyboard_arrow_down
+                : Icons.keyboard_arrow_up),
+            tooltip: hasTracks
+                ? (_timelineExpanded ? 'Hide tracks' : 'Show tracks')
+                : 'Import a MIDI file to see its tracks',
+            onPressed: hasTracks
+                ? () => setState(() => _timelineExpanded = !_timelineExpanded)
+                : null,
+          ),
         ],
       ),
     );
