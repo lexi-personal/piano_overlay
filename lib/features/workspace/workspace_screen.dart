@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../services/project_provider.dart';
+import '../../services/native_bridge.dart';
 import '../../services/ableton/ableton_parser.dart';
 import '../../models/overlay_style.dart';
 import '../../models/calibration.dart';
@@ -23,6 +25,7 @@ class WorkspaceScreen extends StatefulWidget {
 }
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
+  final _bridge = NativeBridge();
   late Player _player;
   late VideoController _videoController;
   bool _leftPanelOpen = true;
@@ -30,6 +33,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   String _leftTab = 'files';
   String _rightTab = 'style';
   bool _isPlaying = false;
+  bool _overlayVisible = true;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
@@ -59,23 +63,116 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          _buildToolbar(),
-          Expanded(
-            child: Row(
+    return PopScope(
+      canPop: !widget.provider.isDirty,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        if (await _confirmDiscard()) {
+          navigator.pop();
+        }
+      },
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
+            if (widget.provider.hasProject) _saveProject();
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            body: Column(
               children: [
-                if (_leftPanelOpen) _buildLeftPanel(),
-                Expanded(child: _buildCenterArea()),
-                if (_rightPanelOpen) _buildRightPanel(),
+                _buildToolbar(),
+                Expanded(
+                  child: Row(
+                    children: [
+                      if (_leftPanelOpen) _buildLeftPanel(),
+                      Expanded(child: _buildCenterArea()),
+                      if (_rightPanelOpen) _buildRightPanel(),
+                    ],
+                  ),
+                ),
+                _buildTimeline(),
               ],
             ),
           ),
-          _buildTimeline(),
+        ),
+      ),
+    );
+  }
+
+  // ── Project persistence ──
+
+  Future<void> _saveProject() async {
+    if (!widget.provider.hasProject) return;
+    try {
+      final saved = await widget.provider.saveToExistingPath();
+      if (saved == null) {
+        await _saveProjectAs();
+        return;
+      }
+      _showInfo('Saved to $saved');
+    } catch (e) {
+      _showError('Save failed: $e');
+    }
+  }
+
+  Future<void> _saveProjectAs() async {
+    if (!widget.provider.hasProject) return;
+    final directory = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Choose a folder for the project file',
+    );
+    if (directory == null) return;
+    try {
+      final path = await widget.provider.saveProject(directory);
+      _showInfo('Saved to $path');
+    } catch (e) {
+      _showError('Save failed: $e');
+    }
+  }
+
+  /// Returns true when it is safe to leave the workspace.
+  Future<bool> _confirmDiscard() async {
+    if (!widget.provider.isDirty) return true;
+    if (!mounted) return true;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unsaved changes'),
+        content: const Text('This project has unsaved changes. Save before leaving?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 'discard'),
+              child: const Text('Discard')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'save'),
+              child: const Text('Save')),
         ],
       ),
     );
+    if (choice == 'save') {
+      await _saveProject();
+      return !widget.provider.isDirty;
+    }
+    return choice == 'discard';
+  }
+
+  void _showInfo(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Theme.of(context).colorScheme.error,
+    ));
   }
 
   // ── Toolbar ──
@@ -90,12 +187,32 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           IconButton(
             icon: const Icon(Icons.arrow_back),
             tooltip: 'Back to Home',
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.maybePop(context),
           ),
           const SizedBox(width: 8),
           Text(widget.provider.project?.name ?? 'Untitled',
               style: Theme.of(context).textTheme.titleMedium),
+          if (widget.provider.isDirty)
+            const Padding(
+              padding: EdgeInsets.only(left: 6),
+              child: Text('•', style: TextStyle(fontSize: 22, color: Colors.orangeAccent)),
+            ),
           const Spacer(),
+          IconButton(
+            icon: Icon(_overlayVisible ? Icons.layers : Icons.layers_clear),
+            tooltip: _overlayVisible ? 'Hide Overlay' : 'Show Overlay',
+            onPressed: () => setState(() => _overlayVisible = !_overlayVisible),
+          ),
+          IconButton(
+            icon: const Icon(Icons.save),
+            tooltip: 'Save (Ctrl+S)',
+            onPressed: widget.provider.hasProject ? _saveProject : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.save_as),
+            tooltip: 'Save As…',
+            onPressed: widget.provider.hasProject ? _saveProjectAs : null,
+          ),
           IconButton(
             icon: Icon(_leftPanelOpen ? Icons.chevron_left : Icons.chevron_right),
             tooltip: 'Toggle Left Panel',
@@ -269,6 +386,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             }
           },
         ),
+        const SizedBox(height: 12),
+        Center(
+          child: TextButton.icon(
+            onPressed: sync.offsetMs == 0
+                ? null
+                : () => widget.provider.updateSync(sync.copyWith(offsetMs: 0)),
+            icon: const Icon(Icons.restart_alt, size: 18),
+            label: const Text('Reset to 0'),
+          ),
+        ),
       ],
     );
   }
@@ -332,6 +459,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             widget.provider.updateStyle(style.copyWith(laneOpacity: v))),
         _sliderRow('Glow', style.glowStrength, 0, 1, (v) =>
             widget.provider.updateStyle(style.copyWith(glowStrength: v))),
+        _sliderRow('Glow Radius', style.glowRadius, 0, 30, (v) =>
+            widget.provider.updateStyle(style.copyWith(glowRadius: v)),
+            suffix: ' px'),
         _sliderRow('Strip Width', style.stripThickness, 0.3, 1.5, (v) =>
             widget.provider.updateStyle(style.copyWith(stripThickness: v))),
         const SizedBox(height: 16),
@@ -339,6 +469,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _sliderRow('Lookahead', style.lookaheadMs, 500, 5000, (v) =>
             widget.provider.updateStyle(style.copyWith(lookaheadMs: v)),
             suffix: ' ms'),
+        _sliderRow('Fall Speed', style.fallSpeed, 50, 800, (v) =>
+            widget.provider.updateStyle(style.copyWith(fallSpeed: v)),
+            suffix: ' px/s'),
       ],
     );
   }
@@ -383,7 +516,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return Stack(
       children: [
         Center(child: Video(controller: _videoController)),
-        if (widget.provider.hasCalibration && widget.provider.hasMidi)
+        if (widget.provider.hasCalibration && widget.provider.hasMidi && _overlayVisible)
           Positioned.fill(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -516,12 +649,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (result == null || result.files.isEmpty) return;
     final path = result.files.single.path;
     if (path == null) return;
-    // TODO: extract video metadata properly
-    widget.provider.setVideo(
-      path,
-      widget.provider.project?.video ??
-          VideoMetadata(width: 1920, height: 1080, fps: 30, durationMs: 0, codec: 'h264', hasAudio: true, fileSizeBytes: 0, filePath: path),
-    );
+
+    VideoMetadata metadata;
+    try {
+      metadata = _bridge.isInitialized
+          ? _bridge.extractVideoMetadata(path)
+          : await _bridge.getVideoMetadataFallback(path);
+    } catch (e) {
+      try {
+        metadata = await _bridge.getVideoMetadataFallback(path);
+      } catch (e2) {
+        _showError('Could not read video metadata: $e2');
+        return;
+      }
+    }
+    widget.provider.setVideo(path, metadata);
     _loadVideo(path);
   }
 
@@ -534,8 +676,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (result == null || result.files.isEmpty) return;
     final path = result.files.single.path;
     if (path == null) return;
-    // TODO: parse MIDI via native bridge
-    widget.provider.setMidi(path, MidiFileData.empty());
+
+    if (!_bridge.isInitialized) {
+      _showError('Native library not loaded — cannot parse MIDI.');
+      return;
+    }
+    try {
+      final data = _bridge.parseMidi(path);
+      widget.provider.setMidi(path, data);
+      _showInfo('Imported ${data.noteCount} notes from ${data.trackCount} track(s).');
+    } catch (e) {
+      _showError('MIDI import failed: $e');
+    }
   }
 
   Future<void> _importAbleton() async {
@@ -571,10 +723,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (audio != null) {
       final audioPath = audio.path;
       if (await File(audioPath).exists()) {
-        widget.provider.setVideo(
-          audioPath,
-          VideoMetadata(width: 1920, height: 1080, fps: 30, durationMs: 0, codec: 'h264', hasAudio: true, fileSizeBytes: 0, filePath: audioPath),
-        );
+        VideoMetadata metadata;
+        try {
+          metadata = await _bridge.getMediaMetadataFallback(audioPath);
+        } catch (e) {
+          metadata = VideoMetadata(
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            durationMs: midiData.durationMs,
+            codec: 'none',
+            hasAudio: true,
+            fileSizeBytes: 0,
+            filePath: audioPath,
+          );
+        }
+        widget.provider.setVideo(audioPath, metadata);
         _loadVideo(audioPath);
       }
     }

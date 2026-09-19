@@ -258,9 +258,59 @@ class NativeBridge {
 
   /// Fallback: extract video metadata using ffprobe subprocess (no Rust needed).
   Future<VideoMetadata> getVideoMetadataFallback(String path) async {
+    final probe = await _runFfprobe(path);
+    final streams = probe['streams'] as List;
+    final videoStream = streams.firstWhere(
+      (s) => s['codec_type'] == 'video',
+      orElse: () => throw Exception('No video stream found'),
+    );
+    return _metadataFromProbe(path, probe, videoStream);
+  }
+
+  /// Probe any media file. When the file has no video stream (e.g. a bounced
+  /// audio track from Ableton) a synthetic canvas of [fallbackWidth] x
+  /// [fallbackHeight] at [fallbackFps] is returned, carrying the real duration
+  /// so the timeline and export stay in sync.
+  Future<VideoMetadata> getMediaMetadataFallback(
+    String path, {
+    int fallbackWidth = 1920,
+    int fallbackHeight = 1080,
+    double fallbackFps = 30.0,
+  }) async {
+    final probe = await _runFfprobe(path);
+    final streams = probe['streams'] as List;
+    final videoStream = streams.cast<Map<String, dynamic>?>().firstWhere(
+          (s) => s?['codec_type'] == 'video',
+          orElse: () => null,
+        );
+    if (videoStream != null) {
+      return _metadataFromProbe(path, probe, videoStream);
+    }
+
+    final audioStream = streams.cast<Map<String, dynamic>?>().firstWhere(
+          (s) => s?['codec_type'] == 'audio',
+          orElse: () => null,
+        );
+    final durationStr = probe['format']?['duration'] ?? audioStream?['duration'] ?? '0';
+    return VideoMetadata(
+      width: fallbackWidth,
+      height: fallbackHeight,
+      fps: fallbackFps,
+      durationMs: (double.tryParse(durationStr.toString()) ?? 0) * 1000,
+      codec: audioStream?['codec_name'] as String? ?? 'none',
+      hasAudio: audioStream != null,
+      audioSampleRate: audioStream != null
+          ? int.tryParse(audioStream['sample_rate']?.toString() ?? '')
+          : null,
+      fileSizeBytes: int.tryParse(probe['format']?['size']?.toString() ?? '0') ?? 0,
+      filePath: path,
+    );
+  }
+
+  Future<Map<String, dynamic>> _runFfprobe(String path) async {
     final file = File(path);
     if (!await file.exists()) {
-      throw Exception('Video file not found: $path');
+      throw Exception('Media file not found: $path');
     }
 
     final result = await Process.run('ffprobe', [
@@ -274,37 +324,29 @@ class NativeBridge {
     if (result.exitCode != 0) {
       throw Exception('ffprobe failed: ${result.stderr}');
     }
+    return jsonDecode(result.stdout as String) as Map<String, dynamic>;
+  }
 
-    final probe = jsonDecode(result.stdout as String);
-    final streams = probe['streams'] as List;
-    final videoStream = streams.firstWhere(
-      (s) => s['codec_type'] == 'video',
-      orElse: () => throw Exception('No video stream found'),
-    );
-    final audioStream = streams.cast<Map<String, dynamic>?>().firstWhere(
+  VideoMetadata _metadataFromProbe(
+      String path, Map<String, dynamic> probe, Map<String, dynamic> videoStream) {
+    final audioStream = (probe['streams'] as List).cast<Map<String, dynamic>?>().firstWhere(
           (s) => s?['codec_type'] == 'audio',
           orElse: () => null,
         );
 
-    final width = videoStream['width'] as int;
-    final height = videoStream['height'] as int;
-    final codec = videoStream['codec_name'] as String;
-    final fps = _parseFrameRate(videoStream['r_frame_rate'] as String);
     final durationStr = probe['format']?['duration'] ?? videoStream['duration'] ?? '0';
-    final durationMs = (double.tryParse(durationStr.toString()) ?? 0) * 1000;
-    final fileSize = int.tryParse(probe['format']?['size']?.toString() ?? '0') ?? 0;
 
     return VideoMetadata(
-      width: width,
-      height: height,
-      fps: fps,
-      durationMs: durationMs,
-      codec: codec,
+      width: videoStream['width'] as int,
+      height: videoStream['height'] as int,
+      fps: _parseFrameRate(videoStream['r_frame_rate'] as String),
+      durationMs: (double.tryParse(durationStr.toString()) ?? 0) * 1000,
+      codec: videoStream['codec_name'] as String,
       hasAudio: audioStream != null,
       audioSampleRate: audioStream != null
           ? int.tryParse(audioStream['sample_rate']?.toString() ?? '')
           : null,
-      fileSizeBytes: fileSize,
+      fileSizeBytes: int.tryParse(probe['format']?['size']?.toString() ?? '0') ?? 0,
       filePath: path,
     );
   }

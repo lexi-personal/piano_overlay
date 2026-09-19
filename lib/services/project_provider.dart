@@ -12,9 +12,18 @@ import '../models/overlay_style.dart';
 /// Uses ChangeNotifier for simple, framework-native state management.
 class ProjectProvider extends ChangeNotifier {
   Project? _project;
+  String? _savedPath;
+  bool _isDirty = false;
 
   Project? get project => _project;
   bool get hasProject => _project != null;
+
+  /// Path of the `.pvproj` file this project was last saved to or loaded from.
+  String? get savedPath => _savedPath;
+
+  /// True when the project has unsaved modifications.
+  bool get isDirty => _isDirty;
+
   bool get hasVideo => _project?.hasVideo ?? false;
   bool get hasMidi => _project?.hasMidi ?? false;
   bool get hasCalibration => _project?.hasCalibration ?? false;
@@ -24,6 +33,22 @@ class ProjectProvider extends ChangeNotifier {
   /// Create a new empty project.
   void createProject(String name) {
     _project = Project.create(name);
+    _savedPath = null;
+    _isDirty = false;
+    notifyListeners();
+  }
+
+  /// Rename the current project.
+  void renameProject(String name) {
+    if (_project == null) return;
+    _project!.name = name;
+    _markModified();
+  }
+
+  /// Stamp the modification time, flag unsaved changes and notify listeners.
+  void _markModified() {
+    _project!.modifiedAt = DateTime.now().toIso8601String();
+    _isDirty = true;
     notifyListeners();
   }
 
@@ -32,8 +57,7 @@ class ProjectProvider extends ChangeNotifier {
     if (_project == null) return;
     _project!.videoPath = path;
     _project!.video = metadata;
-    _project!.modifiedAt = DateTime.now().toIso8601String();
-    notifyListeners();
+    _markModified();
   }
 
   /// Set MIDI file data.
@@ -41,52 +65,67 @@ class ProjectProvider extends ChangeNotifier {
     if (_project == null) return;
     _project!.midiPath = path;
     _project!.midi = data;
-    _project!.modifiedAt = DateTime.now().toIso8601String();
-    notifyListeners();
+    _markModified();
   }
 
   /// Set calibration result.
   void setCalibration(CalibrationData calibration) {
     if (_project == null) return;
     _project!.calibration = calibration;
-    _project!.modifiedAt = DateTime.now().toIso8601String();
-    notifyListeners();
+    _markModified();
   }
 
   /// Update sync settings.
   void updateSync(SyncSettings sync) {
     if (_project == null) return;
     _project!.sync = sync;
-    _project!.modifiedAt = DateTime.now().toIso8601String();
-    notifyListeners();
+    _markModified();
   }
 
   /// Update overlay style.
   void updateStyle(OverlayStyle style) {
     if (_project == null) return;
     _project!.style = style;
-    _project!.modifiedAt = DateTime.now().toIso8601String();
-    notifyListeners();
+    _markModified();
   }
 
   /// Update export settings.
   void updateExportSettings(ExportSettings settings) {
     if (_project == null) return;
     _project!.export_ = settings;
-    _project!.modifiedAt = DateTime.now().toIso8601String();
-    notifyListeners();
+    _markModified();
   }
 
-  /// Save project to a .pvproj file.
+  /// Save project into [directoryPath], deriving the file name from the
+  /// project name. Returns the written file path.
   Future<String> saveProject(String directoryPath) async {
     if (_project == null) throw StateError('No project to save');
 
     final fileName = '${_project!.name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_')}.pvproj';
-    final filePath = '$directoryPath/$fileName';
+    return saveProjectToFile('$directoryPath/$fileName');
+  }
+
+  /// Save project to an explicit `.pvproj` file path.
+  Future<String> saveProjectToFile(String filePath) async {
+    if (_project == null) throw StateError('No project to save');
+
+    final path = filePath.toLowerCase().endsWith('.pvproj') ? filePath : '$filePath.pvproj';
+    _project!.modifiedAt = DateTime.now().toIso8601String();
     final json = _projectToJson(_project!);
-    final file = File(filePath);
+    final file = File(path);
+    await file.parent.create(recursive: true);
     await file.writeAsString(const JsonEncoder.withIndent('  ').convert(json));
-    return filePath;
+    _savedPath = path;
+    _isDirty = false;
+    notifyListeners();
+    return path;
+  }
+
+  /// Save to the previously used path. Returns null when the project has
+  /// never been saved, in which case the caller should prompt for a location.
+  Future<String?> saveToExistingPath() async {
+    if (_savedPath == null) return null;
+    return saveProjectToFile(_savedPath!);
   }
 
   /// Load project from a .pvproj file.
@@ -99,6 +138,8 @@ class ProjectProvider extends ChangeNotifier {
     final content = await file.readAsString();
     final json = jsonDecode(content) as Map<String, dynamic>;
     _project = _projectFromJson(json);
+    _savedPath = filePath;
+    _isDirty = false;
     notifyListeners();
   }
 
