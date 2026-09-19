@@ -4,17 +4,27 @@ A Flutter desktop application that creates visual overlays of piano key presses 
 
 ## Features
 
-- **Import** MP4/MOV/AVI/MKV videos and MIDI files
-- **Calibrate** keyboard position by placing 4 corners on the video frame (supports 49, 61, 76, and 88 keys)
-- **Sync** MIDI playback offset with video audio (coarse ±5s, fine ±100ms)
-- **Style** customizable colors, glow, transparency, fall speed, and direction
-- **Preview** real-time overlay visualization with video playback
+- **Import** MP4/MOV/AVI/MKV videos, MIDI files, and MIDI clips from Ableton `.als` sets
+- **Calibrate** keyboard position by placing 4 corners on the video frame (49/61/76/88 keys, or a custom range)
+- **Sync** MIDI playback offset with video audio (±60s slider, ±10/±100 ms nudges, manual entry)
+- **Style** per-hand or per-key-type colors, glow, transparency, lane opacity, fall speed, and lookahead
+- **Preview** real-time overlay visualization with video playback, toggleable overlay
 - **Export** rendered MP4 video with overlay via FFmpeg
+
+## Using the app
+
+Everything happens in the **workspace**: a left panel for files/calibration/sync, a right panel
+for style/export, the video with its live overlay in the centre, and a timeline at the bottom.
+Calibration and export open as dedicated full-screen steps.
+
+Projects are saved as `.pvproj` files (JSON). Use **Save** (`Ctrl+S`) or **Save As…** in the
+workspace toolbar; an orange dot next to the project name marks unsaved changes, and leaving the
+workspace with unsaved work prompts you to save, discard, or cancel.
 
 ## Architecture
 
 ```
-Flutter UI (Screens + Widgets)
+Flutter UI (Workspace + Calibration/Export screens)
     ↓ (ChangeNotifier)
 ProjectProvider (State)
     ↓ (JSON over FFI)
@@ -64,16 +74,21 @@ flutter run -d linux   # or -d macos, -d windows
 ### 3. Run tests
 
 ```bash
-# Rust tests
-cd native && cargo test
+# Rust tests, formatting and lints
+cd native && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
-# Flutter tests (requires native library built)
+# Flutter analysis and tests (requires native library built)
+flutter analyze
 flutter test
 ```
 
+All of the above run on every push and pull request via `.github/workflows/ci.yml`.
+
 ## Project Files
 
-Project files use the `.pvproj` extension (JSON format) and store video/MIDI paths, calibration data, style settings, and sync offsets.
+Project files use the `.pvproj` extension (JSON format) and store video/MIDI paths, calibration
+data, style settings, and sync offsets. Save them from the workspace toolbar and reopen them from
+the home screen.
 
 ## License
 

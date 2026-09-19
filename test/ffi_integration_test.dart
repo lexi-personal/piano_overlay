@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:piano_overlay/services/native_bridge.dart';
 import 'package:piano_overlay/models/calibration.dart';
@@ -8,9 +9,9 @@ void main() {
   late NativeBridge bridge;
 
   setUpAll(() {
-    final libPath = 'native/target/release/libpiano_overlay_native.so';
+    const libPath = 'native/target/release/libpiano_overlay_native.so';
     if (!File(libPath).existsSync()) {
-      print('SKIP: Rust library not built');
+      debugPrint('SKIP: Rust library not built');
       return;
     }
     bridge = NativeBridge();
@@ -96,5 +97,67 @@ void main() {
     // FFmpeg should be available in this environment
     expect(result['available'], true);
     expect(result['version'], contains('ffmpeg'));
+  });
+
+  group('media probing', () {
+    late Directory tmp;
+
+    setUpAll(() {
+      tmp = Directory.systemTemp.createTempSync('pv_probe');
+    });
+
+    tearDownAll(() => tmp.deleteSync(recursive: true));
+
+    test('probes a real video file', () async {
+      final path = '${tmp.path}/clip.mp4';
+      final gen = await Process.run('ffmpeg', [
+        '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=25:duration=2',
+        '-pix_fmt', 'yuv420p', '-y', path,
+      ]);
+      if (gen.exitCode != 0) {
+        debugPrint('SKIP: ffmpeg could not generate a test clip');
+        return;
+      }
+
+      final meta = await NativeBridge().getVideoMetadataFallback(path);
+      expect(meta.width, 320);
+      expect(meta.height, 240);
+      expect(meta.fps, closeTo(25, 0.01));
+      expect(meta.durationMs, closeTo(2000, 100));
+      expect(meta.hasAudio, isFalse);
+    });
+
+    test('falls back to a synthetic canvas for audio-only files', () async {
+      final path = '${tmp.path}/tone.wav';
+      final gen = await Process.run('ffmpeg', [
+        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3',
+        '-y', path,
+      ]);
+      if (gen.exitCode != 0) {
+        debugPrint('SKIP: ffmpeg could not generate a test tone');
+        return;
+      }
+
+      // The video-only probe rejects it...
+      await expectLater(
+        NativeBridge().getVideoMetadataFallback(path),
+        throwsA(isA<Exception>()),
+      );
+
+      // ...while the media probe keeps the real duration.
+      final meta = await NativeBridge().getMediaMetadataFallback(path);
+      expect(meta.width, 1920);
+      expect(meta.height, 1080);
+      expect(meta.fps, 30);
+      expect(meta.hasAudio, isTrue);
+      expect(meta.durationMs, closeTo(3000, 100));
+    });
+
+    test('throws for a missing file', () async {
+      await expectLater(
+        NativeBridge().getMediaMetadataFallback('${tmp.path}/nope.mp4'),
+        throwsA(isA<Exception>()),
+      );
+    });
   });
 }

@@ -20,7 +20,7 @@ void main() {
       provider.createProject('Save Test');
 
       // Set video metadata
-      final meta = VideoMetadata(
+      const meta = VideoMetadata(
         width: 1920,
         height: 1080,
         fps: 30.0,
@@ -58,6 +58,61 @@ void main() {
 
       // Cleanup
       File(path).deleteSync();
+    });
+
+    test('tracks dirty state across edits and saves', () async {
+      final provider = ProjectProvider();
+      provider.createProject('Dirty Test');
+      expect(provider.isDirty, isFalse);
+      expect(provider.savedPath, isNull);
+
+      provider.updateSync(const SyncSettings(offsetMs: 120));
+      expect(provider.isDirty, isTrue);
+
+      final dir = Directory.systemTemp.createTempSync('pv_dirty');
+      final path = await provider.saveProject(dir.path);
+      expect(provider.isDirty, isFalse);
+      expect(provider.savedPath, path);
+
+      // Saving again re-uses the known path.
+      provider.updateStyle(const OverlayStyle(glowStrength: 0.4));
+      expect(provider.isDirty, isTrue);
+      expect(await provider.saveToExistingPath(), path);
+      expect(provider.isDirty, isFalse);
+
+      dir.deleteSync(recursive: true);
+    });
+
+    test('saveToExistingPath returns null before a first save', () async {
+      final provider = ProjectProvider();
+      provider.createProject('Never Saved');
+      expect(await provider.saveToExistingPath(), isNull);
+    });
+
+    test('saveProjectToFile appends the .pvproj extension and reloads', () async {
+      final provider = ProjectProvider();
+      provider.createProject('Extension Test');
+      final dir = Directory.systemTemp.createTempSync('pv_ext');
+
+      final path = await provider.saveProjectToFile('${dir.path}/my_take');
+      expect(path, '${dir.path}/my_take.pvproj');
+      expect(File(path).existsSync(), isTrue);
+
+      final reloaded = ProjectProvider();
+      await reloaded.loadProject(path);
+      expect(reloaded.project!.name, 'Extension Test');
+      expect(reloaded.savedPath, path);
+      expect(reloaded.isDirty, isFalse);
+
+      dir.deleteSync(recursive: true);
+    });
+
+    test('renameProject updates the name and marks the project dirty', () {
+      final provider = ProjectProvider();
+      provider.createProject('Old Name');
+      provider.renameProject('New Name');
+      expect(provider.project!.name, 'New Name');
+      expect(provider.isDirty, isTrue);
     });
   });
 }
