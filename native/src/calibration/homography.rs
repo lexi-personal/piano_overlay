@@ -1,6 +1,8 @@
 use nalgebra::{DMatrix, DVector};
 
-use super::types::{CalibrationData, KeyPosition, KeyboardCorners, KeyboardSize, Point2D};
+use super::types::{
+    CalibrationData, KeyPosition, KeyRange, KeyboardCorners, KeyboardSize, Point2D,
+};
 
 /// Compute the full calibration from user-placed corners and keyboard size.
 /// Returns calibration data with homography matrix and all key positions.
@@ -37,6 +39,10 @@ pub fn compute_calibration(
         keyboard_size,
         homography,
         key_positions,
+        key_range: Some(KeyRange::new(
+            keyboard_size.lowest_note(),
+            keyboard_size.highest_note(),
+        )),
     })
 }
 

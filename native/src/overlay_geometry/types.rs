@@ -33,6 +33,43 @@ pub struct OverlayStyle {
     pub key_highlight_color: [f32; 4],
     /// Background dimming (0.0 = no dim, 1.0 = fully black).
     pub background_dim: f32,
+    /// Color for notes played by the left hand (track 0) when `use_hand_colors` is set.
+    #[serde(default = "default_left_hand_color")]
+    pub left_hand_color: [f32; 4],
+    /// Color for notes played by the right hand (any other track).
+    #[serde(default = "default_right_hand_color")]
+    pub right_hand_color: [f32; 4],
+    /// Color notes by hand (track) instead of by white/black key.
+    #[serde(default)]
+    pub use_hand_colors: bool,
+    /// Opacity of the darkened fall lane behind the strips (0.0 = hidden).
+    #[serde(default = "default_lane_opacity")]
+    pub lane_opacity: f32,
+    /// Corner rounding as a fraction of the strip width (0.0 = square corners).
+    #[serde(default)]
+    pub corner_radius: f32,
+    /// Strip outline width as a fraction of the strip width (0.0 = no outline).
+    #[serde(default)]
+    pub border_width: f32,
+    /// Strip outline color (RGBA).
+    #[serde(default = "default_border_color")]
+    pub border_color: [f32; 4],
+}
+
+fn default_left_hand_color() -> [f32; 4] {
+    [0.31, 0.76, 0.97, 0.85]
+}
+
+fn default_right_hand_color() -> [f32; 4] {
+    [1.0, 0.44, 0.26, 0.85]
+}
+
+fn default_lane_opacity() -> f32 {
+    0.55
+}
+
+fn default_border_color() -> [f32; 4] {
+    [1.0, 1.0, 1.0, 0.9]
 }
 
 impl Default for OverlayStyle {
@@ -52,6 +89,13 @@ impl Default for OverlayStyle {
             key_highlight_enabled: true,
             key_highlight_color: [1.0, 1.0, 1.0, 0.25],
             background_dim: 0.0,
+            left_hand_color: default_left_hand_color(),
+            right_hand_color: default_right_hand_color(),
+            use_hand_colors: false,
+            lane_opacity: default_lane_opacity(),
+            corner_radius: 0.0,
+            border_width: 0.0,
+            border_color: default_border_color(),
         }
     }
 }
@@ -66,7 +110,7 @@ pub enum FallDirection {
 
 /// A single rendered note strip in screen space.
 /// This is the output of the shared overlay geometry engine.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct NoteStrip {
     /// Four vertices of the strip trapezoid in screen-space pixels.
     /// Order: top-left, top-right, bottom-right, bottom-left.
@@ -77,6 +121,15 @@ pub struct NoteStrip {
     pub glow_radius: f32,
     /// Glow intensity (0.0-1.0).
     pub glow_intensity: f32,
+    /// Corner rounding radius in screen pixels (0.0 = square corners).
+    #[serde(default)]
+    pub corner_radius: f32,
+    /// Outline width in screen pixels (0.0 = no outline).
+    #[serde(default)]
+    pub border_width: f32,
+    /// Outline color (RGBA).
+    #[serde(default)]
+    pub border_color: [f32; 4],
 }
 
 /// A key highlight rectangle for an active note.
@@ -91,7 +144,7 @@ pub struct KeyHighlight {
 /// Complete overlay frame data for a single point in time.
 /// This is the shared output consumed by BOTH the Flutter preview painter
 /// and the Rust export compositor.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct OverlayFrame {
     /// All note strips visible at this timestamp.
     pub strips: Vec<NoteStrip>,
@@ -99,6 +152,13 @@ pub struct OverlayFrame {
     pub key_highlights: Vec<KeyHighlight>,
     /// The timestamp this frame was computed for (ms).
     pub timestamp_ms: f64,
+    /// The darkened lane the strips fall through, in screen space.
+    /// Order: keyboard-left, keyboard-right, lane-top-right, lane-top-left.
+    #[serde(default)]
+    pub fall_lane_quad: Option<[Point2D; 4]>,
+    /// Opacity to draw `fall_lane_quad` with.
+    #[serde(default)]
+    pub lane_opacity: f32,
 }
 
 /// Sync settings for aligning MIDI timing to video.

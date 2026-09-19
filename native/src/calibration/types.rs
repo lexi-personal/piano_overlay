@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A 2D point in screen space (pixels).
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Point2D {
     pub x: f64,
     pub y: f64,
@@ -84,6 +84,47 @@ pub struct CalibrationData {
     pub homography: [[f64; 3]; 3],
     /// Pre-computed screen-space positions for each key.
     pub key_positions: Vec<KeyPosition>,
+    /// Explicit key range. Absent for projects calibrated before custom
+    /// ranges existed, in which case it is derived from `keyboard_size`.
+    #[serde(default)]
+    pub key_range: Option<KeyRange>,
+}
+
+/// The span of keys the calibration covers.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct KeyRange {
+    /// Lowest MIDI note on the keyboard.
+    pub lowest_note: u8,
+    /// Highest MIDI note on the keyboard.
+    pub highest_note: u8,
+    /// Number of white keys in the range.
+    pub white_keys: u8,
+}
+
+impl KeyRange {
+    /// Build a range from an inclusive note span, counting the white keys.
+    pub fn new(lowest_note: u8, highest_note: u8) -> Self {
+        let white_keys = (lowest_note..=highest_note)
+            .filter(|n| !matches!(n % 12, 1 | 3 | 6 | 8 | 10))
+            .count() as u8;
+        Self {
+            lowest_note,
+            highest_note,
+            white_keys,
+        }
+    }
+}
+
+impl CalibrationData {
+    /// The effective key range, falling back to the standard keyboard sizes.
+    pub fn effective_key_range(&self) -> KeyRange {
+        self.key_range.unwrap_or_else(|| {
+            KeyRange::new(
+                self.keyboard_size.lowest_note(),
+                self.keyboard_size.highest_note(),
+            )
+        })
+    }
 }
 
 /// Screen-space position of a single piano key (perspective-transformed trapezoid).
