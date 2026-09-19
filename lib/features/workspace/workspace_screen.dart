@@ -464,6 +464,29 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             suffix: ' px'),
         _sliderRow('Strip Width', style.stripThickness, 0.3, 1.5, (v) =>
             widget.provider.updateStyle(style.copyWith(stripThickness: v))),
+        _sliderRow('Background Dim', style.backgroundDim, 0, 1, (v) =>
+            widget.provider.updateStyle(style.copyWith(backgroundDim: v))),
+        const SizedBox(height: 16),
+        _sectionHeader('Shape'),
+        _sliderRow('Corner Radius', style.cornerRadius, 0, 0.5, (v) =>
+            widget.provider.updateStyle(style.copyWith(cornerRadius: v))),
+        _sliderRow('Border Width', style.borderWidth, 0, 0.3, (v) =>
+            widget.provider.updateStyle(style.copyWith(borderWidth: v))),
+        if (style.borderWidth > 0)
+          _colorRow('Border', style.borderColor, (c) =>
+              widget.provider.updateStyle(style.copyWith(borderColor: c))),
+        const SizedBox(height: 16),
+        _sectionHeader('Key Highlight'),
+        SwitchListTile(
+          title: const Text('Light up keys being played'),
+          value: style.keyHighlightEnabled,
+          dense: true,
+          onChanged: (v) => widget.provider
+              .updateStyle(style.copyWith(keyHighlightEnabled: v)),
+        ),
+        if (style.keyHighlightEnabled)
+          _colorRow('Highlight', style.keyHighlightColor, (c) =>
+              widget.provider.updateStyle(style.copyWith(keyHighlightColor: c))),
         const SizedBox(height: 16),
         _sectionHeader('Timing'),
         _sliderRow('Lookahead', style.lookaheadMs, 500, 5000, (v) =>
@@ -472,6 +495,41 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _sliderRow('Fall Speed', style.fallSpeed, 50, 800, (v) =>
             widget.provider.updateStyle(style.copyWith(fallSpeed: v)),
             suffix: ' px/s'),
+        ListTile(
+          dense: true,
+          title: const Text('Direction', style: TextStyle(fontSize: 13)),
+          trailing: DropdownButton<FallDirection>(
+            value: style.fallDirection,
+            underline: const SizedBox.shrink(),
+            onChanged: (v) => v == null
+                ? null
+                : widget.provider.updateStyle(style.copyWith(fallDirection: v)),
+            items: const [
+              DropdownMenuItem(
+                value: FallDirection.topToBottom,
+                child: Text('Falling down', style: TextStyle(fontSize: 13)),
+              ),
+              DropdownMenuItem(
+                value: FallDirection.bottomToTop,
+                child: Text('Rising up', style: TextStyle(fontSize: 13)),
+              ),
+            ],
+          ),
+        ),
+        SwitchListTile(
+          title: const Text('Show notes before they play'),
+          value: style.showBeforePlay,
+          dense: true,
+          onChanged: (v) =>
+              widget.provider.updateStyle(style.copyWith(showBeforePlay: v)),
+        ),
+        SwitchListTile(
+          title: const Text('Show notes while they play'),
+          value: style.showDuringPlay,
+          dense: true,
+          onChanged: (v) =>
+              widget.provider.updateStyle(style.copyWith(showDuringPlay: v)),
+        ),
       ],
     );
   }
