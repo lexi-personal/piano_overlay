@@ -19,6 +19,12 @@ class OverlayGeometry {
   /// Trail fade duration in ms for notes that have already ended.
   static const double _trailFadeMs = 200.0;
 
+  /// Strip width per unit of [OverlayStyle.stripThickness], in canonical white
+  /// key units. Picked so the default thickness of 0.8 keeps the original
+  /// 0.9 / 0.55 widths.
+  static const double _whiteStripWidthUnit = 1.125;
+  static const double _blackStripWidthUnit = 0.6875;
+
   /// Compute a full overlay frame for the given timestamp.
   static OverlayFrameData computeFrame({
     required double timestampMs,
@@ -48,13 +54,18 @@ class OverlayGeometry {
     );
 
     // --- Build the fall lane using LINEAR extrapolation ---
-    // Keyboard top edge via homography at y=0 (within calibrated region, safe).
-    final kbLeft = _transformPoint(h, 0.0, 0.0);
-    final kbRight = _transformPoint(h, whiteKeys.toDouble(), 0.0);
+    // Top-to-bottom hangs the lane above the keyboard's far edge (y = 0);
+    // bottom-to-top hangs it below the near edge (y = 1).
+    final anchorY = style.fallDirection == FallDirection.bottomToTop ? 1.0 : 0.0;
+    final laneDir = style.fallDirection == FallDirection.bottomToTop ? 1.0 : -1.0;
 
-    // Points at y=-1.0 (small extrapolation, still safe).
-    final aboveLeft = _transformPoint(h, 0.0, -1.0);
-    final aboveRight = _transformPoint(h, whiteKeys.toDouble(), -1.0);
+    // Keyboard edge via homography (within calibrated region, safe).
+    final kbLeft = _transformPoint(h, 0.0, anchorY);
+    final kbRight = _transformPoint(h, whiteKeys.toDouble(), anchorY);
+
+    // Points one keyboard height away (small extrapolation, still safe).
+    final aboveLeft = _transformPoint(h, 0.0, anchorY + laneDir);
+    final aboveRight = _transformPoint(h, whiteKeys.toDouble(), anchorY + laneDir);
 
     // Direction vectors (per unit of canonical height).
     final dirLeft = Offset(
@@ -89,6 +100,9 @@ class OverlayGeometry {
 
       // Visibility check.
       if (endOffset < -_trailFadeMs || startOffset > lookahead) continue;
+      final isSounding = startOffset <= 0 && endOffset >= 0;
+      if (!style.showBeforePlay && startOffset > 0) continue;
+      if (!style.showDuringPlay && isSounding) continue;
 
       final isBlack = _isBlackKey(note.pitch);
       final keyX = _keyCanonicalX(note.pitch, lowestNote, isBlack);
@@ -99,8 +113,8 @@ class OverlayGeometry {
       if (tTop - tBottom < 0.0005) continue;
 
       // Fractional x positions for left/right edges of the key strip.
-      final keyWidth = isBlack ? 0.55 : 0.9;
-      final halfWidth = keyWidth / 2.0;
+      final widthUnit = isBlack ? _blackStripWidthUnit : _whiteStripWidthUnit;
+      final halfWidth = widthUnit * style.stripThickness / 2.0;
       final fxLeft = (keyX - halfWidth) / whiteKeys;
       final fxRight = (keyX + halfWidth) / whiteKeys;
 
@@ -117,21 +131,25 @@ class OverlayGeometry {
       } else {
         baseColor = isBlack ? style.blackKeyColor : style.whiteKeyColor;
       }
-      var opacity = style.transparency;
-
       // Fade notes that have already ended (trail effect).
-      if (endOffset < 0) {
-        final fadeFactor = 1.0 - ((-endOffset) / _trailFadeMs).clamp(0.0, 1.0);
-        opacity *= fadeFactor;
-      }
+      final fade = endOffset < 0
+          ? 1.0 - ((-endOffset) / _trailFadeMs).clamp(0.0, 1.0)
+          : 1.0;
 
-      final color = baseColor.withOpacity(opacity);
+      final color = baseColor.withOpacity(style.transparency * fade);
+
+      // Corner rounding and outlines are stored as a fraction of the strip
+      // width so they look identical in the preview and in the export.
+      final stripPxWidth = (bottomRight - bottomLeft).distance;
 
       strips.add(NoteStripRenderData(
         quad: [topLeft, topRight, bottomRight, bottomLeft],
         color: color,
         glowRadius: style.glowRadius,
         glowIntensity: style.glowStrength,
+        cornerRadius: style.cornerRadius * stripPxWidth,
+        borderWidth: style.borderWidth * stripPxWidth,
+        borderColor: style.borderColor.withOpacity(style.borderColor.opacity * fade),
       ));
 
       // Key highlights for notes currently being played.

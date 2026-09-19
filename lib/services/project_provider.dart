@@ -233,7 +233,14 @@ class ProjectProvider extends ChangeNotifier {
       showDuringPlay: json['show_during_play'] ?? true,
       fallSpeed: (json['fall_speed'] as num?)?.toDouble() ?? 200.0,
       keyHighlightEnabled: json['key_highlight_enabled'] ?? true,
+      keyHighlightColor: _hexToColor(json['key_highlight_color'] ?? '#40FFFFFF'),
+      fallDirection: json['fall_direction'] == 'bottomToTop'
+          ? FallDirection.bottomToTop
+          : FallDirection.topToBottom,
       backgroundDim: (json['background_dim'] as num?)?.toDouble() ?? 0.0,
+      cornerRadius: (json['corner_radius'] as num?)?.toDouble() ?? 0.0,
+      borderWidth: (json['border_width'] as num?)?.toDouble() ?? 0.0,
+      borderColor: _hexToColor(json['border_color'] ?? '#E6FFFFFF'),
     );
   }
 

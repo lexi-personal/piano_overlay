@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// The core overlay painter that renders note strips on top of the video.
@@ -51,38 +53,121 @@ class OverlayPainter extends CustomPainter {
 
     // Draw key highlights first (below strips)
     for (final highlight in keyHighlights) {
-      _drawQuad(canvas, highlight.quad, highlight.color, null, 0);
+      _drawQuad(canvas, highlight.quad, highlight.color, null);
     }
 
     // Draw note strips with glow
     for (final strip in strips) {
       if (strip.glowRadius > 0 && strip.glowIntensity > 0) {
         final glowColor = strip.color.withOpacity(strip.color.opacity * strip.glowIntensity * 0.6);
-        _drawQuad(canvas, strip.quad, glowColor, strip.glowRadius, 0);
+        _drawQuad(canvas, strip.quad, glowColor, strip.glowRadius,
+            cornerRadius: strip.cornerRadius);
       }
-      _drawQuad(canvas, strip.quad, strip.color, null, 0);
+      _drawQuad(canvas, strip.quad, strip.color, null,
+          cornerRadius: strip.cornerRadius);
+
+      if (strip.borderWidth > 0 && strip.borderColor.opacity > 0) {
+        _drawQuad(canvas, strip.quad, strip.borderColor, null,
+            cornerRadius: strip.cornerRadius, strokeWidth: strip.borderWidth);
+      }
     }
   }
 
-  void _drawQuad(Canvas canvas, List<Offset> quad, Color color, double? blurRadius, double elevation) {
+  void _drawQuad(
+    Canvas canvas,
+    List<Offset> quad,
+    Color color,
+    double? blurRadius, {
+    double cornerRadius = 0,
+    double strokeWidth = 0,
+  }) {
     if (quad.length != 4) return;
 
-    final path = Path()
-      ..moveTo(quad[0].dx, quad[0].dy)
-      ..lineTo(quad[1].dx, quad[1].dy)
-      ..lineTo(quad[2].dx, quad[2].dy)
-      ..lineTo(quad[3].dx, quad[3].dy)
-      ..close();
+    final path = _quadPath(quad, cornerRadius);
 
     final paint = Paint()
       ..color = color
-      ..style = PaintingStyle.fill;
+      ..isAntiAlias = true;
 
+    if (strokeWidth > 0) {
+      // Inset the stroke so the outline sits inside the strip, like the
+      // export compositor draws it.
+      paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth;
+      canvas.save();
+      canvas.clipPath(path);
+      canvas.drawPath(path, paint);
+      canvas.restore();
+      return;
+    }
+
+    paint.style = PaintingStyle.fill;
     if (blurRadius != null && blurRadius > 0) {
       paint.maskFilter = MaskFilter.blur(BlurStyle.normal, blurRadius);
     }
 
     canvas.drawPath(path, paint);
+  }
+
+  /// Build the strip outline, rounding the corners by [cornerRadius] pixels.
+  ///
+  /// The rounded shape is the quad eroded by the radius and then swept with a
+  /// circle of that radius — the same construction the Rust compositor
+  /// rasterises, so preview and export agree.
+  static Path _quadPath(List<Offset> quad, double cornerRadius) {
+    final radius = cornerRadius <= 0 ? 0.0 : cornerRadius.clamp(0.0, _maxInset(quad));
+    if (radius <= 0) {
+      return Path()
+        ..moveTo(quad[0].dx, quad[0].dy)
+        ..lineTo(quad[1].dx, quad[1].dy)
+        ..lineTo(quad[2].dx, quad[2].dy)
+        ..lineTo(quad[3].dx, quad[3].dy)
+        ..close();
+    }
+
+    final path = Path();
+    for (var i = 0; i < 4; i++) {
+      final previous = quad[(i + 3) % 4];
+      final current = quad[i];
+      final next = quad[(i + 1) % 4];
+
+      final fromPrevious = _towards(current, previous, radius);
+      final towardsNext = _towards(current, next, radius);
+
+      if (i == 0) {
+        path.moveTo(fromPrevious.dx, fromPrevious.dy);
+      } else {
+        path.lineTo(fromPrevious.dx, fromPrevious.dy);
+      }
+      path.quadraticBezierTo(
+          current.dx, current.dy, towardsNext.dx, towardsNext.dy);
+    }
+    path.close();
+    return path;
+  }
+
+  /// Point [distance] pixels from [from] along the line towards [to].
+  static Offset _towards(Offset from, Offset to, double distance) {
+    final dx = to.dx - from.dx;
+    final dy = to.dy - from.dy;
+    final length = math.sqrt(dx * dx + dy * dy);
+    if (length < 1e-9) return from;
+    final t = math.min(distance / length, 0.5);
+    return Offset(from.dx + dx * t, from.dy + dy * t);
+  }
+
+  /// Largest rounding that still fits inside the quad.
+  static double _maxInset(List<Offset> quad) {
+    var shortest = double.infinity;
+    for (var i = 0; i < 4; i++) {
+      final a = quad[i];
+      final b = quad[(i + 1) % 4];
+      final length = math.sqrt(
+          math.pow(b.dx - a.dx, 2) + math.pow(b.dy - a.dy, 2));
+      if (length < shortest) shortest = length;
+    }
+    return shortest / 2;
   }
 
   @override
@@ -102,12 +187,21 @@ class NoteStripRenderData {
   final double glowRadius;
   /// Glow intensity (0-1).
   final double glowIntensity;
+  /// Corner rounding radius in pixels.
+  final double cornerRadius;
+  /// Outline width in pixels.
+  final double borderWidth;
+  /// Outline color.
+  final Color borderColor;
 
   const NoteStripRenderData({
     required this.quad,
     required this.color,
     this.glowRadius = 0,
     this.glowIntensity = 0,
+    this.cornerRadius = 0,
+    this.borderWidth = 0,
+    this.borderColor = const Color(0x00000000),
   });
 
   /// Parse from JSON (output of Rust ffi_compute_overlay_frame).
@@ -128,6 +222,19 @@ class NoteStripRenderData {
       ),
       glowRadius: (json['glow_radius'] as num?)?.toDouble() ?? 0,
       glowIntensity: (json['glow_intensity'] as num?)?.toDouble() ?? 0,
+      cornerRadius: (json['corner_radius'] as num?)?.toDouble() ?? 0,
+      borderWidth: (json['border_width'] as num?)?.toDouble() ?? 0,
+      borderColor: _rgbaToColor(json['border_color']),
+    );
+  }
+
+  static Color _rgbaToColor(dynamic data) {
+    if (data is! List || data.length < 4) return const Color(0x00000000);
+    return Color.fromRGBO(
+      (data[0] * 255).round(),
+      (data[1] * 255).round(),
+      (data[2] * 255).round(),
+      (data[3] as num).toDouble(),
     );
   }
 }

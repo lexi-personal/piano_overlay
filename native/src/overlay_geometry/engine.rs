@@ -61,11 +61,7 @@ impl OverlayEngine {
             kb_right.y + (above_right.y - kb_right.y) * Self::CANONICAL_LANE_HEIGHT,
         );
 
-        let lookahead = if style.show_before_play {
-            style.lookahead_ms.max(1e-6)
-        } else {
-            1e-6
-        };
+        let lookahead = style.lookahead_ms.max(1e-6);
 
         let mut strips = Vec::new();
         let mut key_highlights = Vec::new();

@@ -329,6 +329,11 @@ class _ExportScreenState extends State<ExportScreen> {
     return {
       'corners': cal.corners.toJson(),
       'keyboard_size': cal.keyboardSize.name,
+      'key_range': {
+        'lowest_note': cal.keyRange.lowestNote,
+        'highest_note': cal.keyRange.highestNote,
+        'white_keys': cal.keyRange.whiteKeys,
+      },
       'homography': cal.homography,
       'key_positions': cal.keyPositions.map((k) => {
         'note': k.note,
@@ -339,27 +344,7 @@ class _ExportScreenState extends State<ExportScreen> {
     };
   }
 
-  Map<String, dynamic> _buildStyleJson(project) {
-    final s = project.style;
-    return {
-      'white_key_color': [s.whiteKeyColor.red / 255, s.whiteKeyColor.green / 255,
-                          s.whiteKeyColor.blue / 255, s.whiteKeyColor.opacity],
-      'black_key_color': [s.blackKeyColor.red / 255, s.blackKeyColor.green / 255,
-                          s.blackKeyColor.blue / 255, s.blackKeyColor.opacity],
-      'strip_thickness': s.stripThickness,
-      'glow_strength': s.glowStrength,
-      'glow_radius': s.glowRadius,
-      'transparency': s.transparency,
-      'lookahead_ms': s.lookaheadMs,
-      'show_before_play': s.showBeforePlay,
-      'show_during_play': s.showDuringPlay,
-      'fall_speed': s.fallSpeed,
-      'fall_direction': 'TopToBottom',
-      'key_highlight_enabled': s.keyHighlightEnabled,
-      'key_highlight_color': [1.0, 1.0, 1.0, 0.25],
-      'background_dim': s.backgroundDim,
-    };
-  }
+  Map<String, dynamic> _buildStyleJson(project) => project.style.toNativeJson();
 
   String? _findLibraryPath() {
     final candidates = [

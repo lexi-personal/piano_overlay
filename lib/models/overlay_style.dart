@@ -21,6 +21,15 @@ class OverlayStyle {
   final double laneOpacity;
   final bool useHandColors;
 
+  /// Corner rounding as a fraction of the strip width (0 = square corners).
+  final double cornerRadius;
+
+  /// Strip outline width as a fraction of the strip width (0 = no outline).
+  final double borderWidth;
+
+  /// Strip outline color.
+  final Color borderColor;
+
   const OverlayStyle({
     this.whiteKeyColor = const Color(0xFF4FC3F7),
     this.blackKeyColor = const Color(0xFFFF7043),
@@ -40,6 +49,9 @@ class OverlayStyle {
     this.backgroundDim = 0.0,
     this.laneOpacity = 0.55,
     this.useHandColors = false,
+    this.cornerRadius = 0.0,
+    this.borderWidth = 0.0,
+    this.borderColor = const Color(0xE6FFFFFF),
   });
 
   OverlayStyle copyWith({
@@ -61,6 +73,9 @@ class OverlayStyle {
     double? backgroundDim,
     double? laneOpacity,
     bool? useHandColors,
+    double? cornerRadius,
+    double? borderWidth,
+    Color? borderColor,
   }) {
     return OverlayStyle(
       whiteKeyColor: whiteKeyColor ?? this.whiteKeyColor,
@@ -81,6 +96,9 @@ class OverlayStyle {
       backgroundDim: backgroundDim ?? this.backgroundDim,
       laneOpacity: laneOpacity ?? this.laneOpacity,
       useHandColors: useHandColors ?? this.useHandColors,
+      cornerRadius: cornerRadius ?? this.cornerRadius,
+      borderWidth: borderWidth ?? this.borderWidth,
+      borderColor: borderColor ?? this.borderColor,
     );
   }
 
@@ -103,7 +121,39 @@ class OverlayStyle {
         'background_dim': backgroundDim,
         'lane_opacity': laneOpacity,
         'use_hand_colors': useHandColors,
+        'corner_radius': cornerRadius,
+        'border_width': borderWidth,
+        'border_color': _colorToHex(borderColor),
       };
+
+  /// Style payload for the Rust engine, which expects RGBA float arrays.
+  Map<String, dynamic> toNativeJson() => {
+        'white_key_color': _colorToRgba(whiteKeyColor),
+        'black_key_color': _colorToRgba(blackKeyColor),
+        'left_hand_color': _colorToRgba(leftHandColor),
+        'right_hand_color': _colorToRgba(rightHandColor),
+        'use_hand_colors': useHandColors,
+        'strip_thickness': stripThickness,
+        'glow_strength': glowStrength,
+        'glow_radius': glowRadius,
+        'transparency': transparency,
+        'lookahead_ms': lookaheadMs,
+        'show_before_play': showBeforePlay,
+        'show_during_play': showDuringPlay,
+        'fall_speed': fallSpeed,
+        'fall_direction':
+            fallDirection == FallDirection.bottomToTop ? 'BottomToTop' : 'TopToBottom',
+        'key_highlight_enabled': keyHighlightEnabled,
+        'key_highlight_color': _colorToRgba(keyHighlightColor),
+        'background_dim': backgroundDim,
+        'lane_opacity': laneOpacity,
+        'corner_radius': cornerRadius,
+        'border_width': borderWidth,
+        'border_color': _colorToRgba(borderColor),
+      };
+
+  static List<double> _colorToRgba(Color c) =>
+      [c.red / 255, c.green / 255, c.blue / 255, c.opacity];
 
   static String _colorToHex(Color c) =>
       '#${c.value.toRadixString(16).padLeft(8, '0')}';
