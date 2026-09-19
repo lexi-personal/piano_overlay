@@ -44,7 +44,14 @@ impl Compositor {
                 glow_color[3] *= strip.glow_intensity * 0.4;
                 // Draw slightly expanded quad for glow effect
                 let expanded = Self::expand_quad(&strip.quad, strip.glow_radius as f64);
-                Self::draw_quad(buffer, width, height, &expanded, glow_color, strip.glow_radius);
+                Self::draw_quad(
+                    buffer,
+                    width,
+                    height,
+                    &expanded,
+                    glow_color,
+                    strip.glow_radius,
+                );
             }
         }
 
@@ -219,10 +226,11 @@ mod tests {
         Compositor::composite_frame(&mut buffer, 4, 4, &frame, 0.0);
 
         // Pixel at (1,1) should be red
-        let idx = (1 * 4 + 1) * 4;
-        assert_eq!(buffer[idx], 255);     // R
-        assert_eq!(buffer[idx + 1], 0);   // G
-        assert_eq!(buffer[idx + 2], 0);   // B
+        let (x, y) = (1usize, 1usize);
+        let idx = (y * 4 + x) * 4;
+        assert_eq!(buffer[idx], 255); // R
+        assert_eq!(buffer[idx + 1], 0); // G
+        assert_eq!(buffer[idx + 2], 0); // B
 
         // Pixel at (0,0) should still be white
         assert_eq!(buffer[0], 255);

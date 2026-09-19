@@ -54,14 +54,18 @@ pub fn extract_video_metadata(path: &str) -> Result<VideoMetadata, VideoMetadata
     // Use ffprobe to extract metadata as JSON
     let output = Command::new("ffprobe")
         .args([
-            "-v", "quiet",
-            "-print_format", "json",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_streams",
             path,
         ])
         .output()
-        .map_err(|e| VideoMetadataError::ProbeError(format!("ffprobe not found or failed: {}", e)))?;
+        .map_err(|e| {
+            VideoMetadataError::ProbeError(format!("ffprobe not found or failed: {}", e))
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -72,8 +76,9 @@ pub fn extract_video_metadata(path: &str) -> Result<VideoMetadata, VideoMetadata
     }
 
     let json_str = String::from_utf8_lossy(&output.stdout);
-    let probe: serde_json::Value = serde_json::from_str(&json_str)
-        .map_err(|e| VideoMetadataError::ProbeError(format!("Failed to parse ffprobe output: {}", e)))?;
+    let probe: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+        VideoMetadataError::ProbeError(format!("Failed to parse ffprobe output: {}", e))
+    })?;
 
     // Find video stream
     let streams = probe["streams"]

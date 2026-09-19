@@ -13,10 +13,10 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
+use super::compositor::Compositor;
 use crate::calibration::CalibrationData;
 use crate::midi::types::MidiNote;
 use crate::overlay_geometry::{OverlayEngine, OverlayStyle, SyncSettings};
-use super::compositor::Compositor;
 
 /// Export progress information.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -88,6 +88,12 @@ struct ExportProgressState {
     cancelled: AtomicBool,
 }
 
+impl Default for ExportPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExportPipeline {
     pub fn new() -> Self {
         Self {
@@ -153,7 +159,9 @@ impl ExportPipeline {
         }
 
         let total_frames = (config.duration_ms / 1000.0 * config.fps).ceil() as u32;
-        self.progress.total_frames.store(total_frames, Ordering::Relaxed);
+        self.progress
+            .total_frames
+            .store(total_frames, Ordering::Relaxed);
         self.progress.current_frame.store(0, Ordering::Relaxed);
         *self.progress.status.lock().unwrap() = ExportStatus::Encoding;
 
@@ -170,11 +178,15 @@ impl ExportPipeline {
         // Decodes input video to raw RGBA frames via stdout
         let mut decoder = Command::new(ffmpeg)
             .args([
-                "-i", &config.input_video_path,
-                "-f", "rawvideo",
-                "-pix_fmt", "rgba",
-                "-v", "error",
-                "-"
+                "-i",
+                &config.input_video_path,
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgba",
+                "-v",
+                "error",
+                "-",
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -188,28 +200,43 @@ impl ExportPipeline {
 
         let mut encoder = Command::new(ffmpeg)
             .args([
-                "-y",  // Overwrite output
+                "-y", // Overwrite output
                 // Raw video input from pipe
-                "-f", "rawvideo",
-                "-pix_fmt", "rgba",
-                "-s", &size_str,
-                "-r", &fps_str,
-                "-i", "pipe:0",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgba",
+                "-s",
+                &size_str,
+                "-r",
+                &fps_str,
+                "-i",
+                "pipe:0",
                 // Audio from original video
-                "-i", &config.input_video_path,
+                "-i",
+                &config.input_video_path,
                 // Map video from pipe, audio from original
-                "-map", "0:v",
-                "-map", "1:a?",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a?",
                 // Encode settings
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", crf,
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-b:a", "192k",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                crf,
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
                 // Shortest stream determines duration
                 "-shortest",
-                "-v", "error",
+                "-v",
+                "error",
                 &config.output_path,
             ])
             .stdin(Stdio::piped())
@@ -217,18 +244,17 @@ impl ExportPipeline {
             .spawn()
             .map_err(|e| format!("Failed to start FFmpeg encoder: {}", e))?;
 
-        let decoder_stdout = decoder.stdout.take()
+        let decoder_stdout = decoder
+            .stdout
+            .take()
             .ok_or("Failed to capture decoder stdout")?;
-        let encoder_stdin = encoder.stdin.take()
+        let encoder_stdin = encoder
+            .stdin
+            .take()
             .ok_or("Failed to capture encoder stdin")?;
 
         // Process frames
-        let result = self.process_frames(
-            decoder_stdout,
-            encoder_stdin,
-            config,
-            total_frames,
-        );
+        let result = self.process_frames(decoder_stdout, encoder_stdin, config, total_frames);
 
         // Wait for processes to finish
         let _ = decoder.wait();
@@ -315,7 +341,9 @@ impl ExportPipeline {
                 .map_err(|e| format!("Failed to write frame {}: {}", frame_idx, e))?;
 
             // Update progress
-            self.progress.current_frame.store(frame_idx + 1, Ordering::Relaxed);
+            self.progress
+                .current_frame
+                .store(frame_idx + 1, Ordering::Relaxed);
         }
 
         // Flush and close encoder stdin to signal end of input

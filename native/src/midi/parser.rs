@@ -12,9 +12,11 @@ pub enum MidiParseError {
     IoError(#[from] std::io::Error),
     #[error("Failed to parse MIDI file: {0}")]
     ParseError(String),
-    #[error("Unsupported MIDI timing format: SMPTE timecodes are not supported. \
+    #[error(
+        "Unsupported MIDI timing format: SMPTE timecodes are not supported. \
              This file uses absolute time frames instead of ticks-per-beat. \
-             Please re-export the MIDI file using metrical (ticks-per-beat) timing.")]
+             Please re-export the MIDI file using metrical (ticks-per-beat) timing."
+    )]
     UnsupportedTiming,
     #[error("MIDI file contains no notes")]
     NoNotes,
@@ -66,7 +68,13 @@ pub fn parse_midi_bytes(bytes: &[u8]) -> Result<MidiFileData, MidiParseError> {
                         MidiMessage::NoteOn { key, vel } => {
                             if vel.as_int() == 0 {
                                 // NoteOn with velocity 0 = NoteOff
-                                finish_note(&mut active_notes, &mut notes, ch, key.as_int(), time_ms);
+                                finish_note(
+                                    &mut active_notes,
+                                    &mut notes,
+                                    ch,
+                                    key.as_int(),
+                                    time_ms,
+                                );
                             } else {
                                 active_notes.push(PendingNote {
                                     pitch: key.as_int(),
@@ -195,8 +203,7 @@ impl TempoMap {
         };
 
         let delta_ticks = tick - entry.tick;
-        let ms_per_tick =
-            (entry.tempo_us_per_beat as f64) / (self.ticks_per_beat as f64 * 1000.0);
+        let ms_per_tick = (entry.tempo_us_per_beat as f64) / (self.ticks_per_beat as f64 * 1000.0);
         entry.time_ms + (delta_ticks as f64 * ms_per_tick)
     }
 
@@ -210,15 +217,6 @@ impl TempoMap {
 }
 
 fn build_tempo_map(smf: &Smf, ticks_per_beat: u16) -> TempoMap {
-    let mut entries: Vec<TempoEntry> = Vec::new();
-
-    // Default tempo: 120 BPM = 500000 us/beat
-    entries.push(TempoEntry {
-        tick: 0,
-        tempo_us_per_beat: 500_000,
-        time_ms: 0.0,
-    });
-
     // Collect all tempo changes from all tracks
     let mut tempo_events: Vec<(u64, u32)> = Vec::new();
     for track in &smf.tracks {
@@ -236,7 +234,7 @@ fn build_tempo_map(smf: &Smf, ticks_per_beat: u16) -> TempoMap {
     // Deduplicate (same tick, keep last)
     tempo_events.dedup_by_key(|(tick, _)| *tick);
 
-    // Build map with cumulative time
+    // Build map with cumulative time. Default tempo: 120 BPM = 500000 us/beat.
     let mut map = TempoMap {
         entries: vec![TempoEntry {
             tick: 0,

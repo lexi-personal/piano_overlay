@@ -4,18 +4,18 @@
 use std::path::Path;
 use std::process::Command;
 
-use piano_overlay_native::calibration::{compute_calibration, KeyboardCorners, KeyboardSize, Point2D};
-use piano_overlay_native::export::ExportPipeline;
+use piano_overlay_native::calibration::{
+    compute_calibration, KeyboardCorners, KeyboardSize, Point2D,
+};
 use piano_overlay_native::export::pipeline::ExportConfig;
+use piano_overlay_native::export::ExportPipeline;
 use piano_overlay_native::midi::types::MidiNote;
 use piano_overlay_native::overlay_geometry::{OverlayStyle, SyncSettings};
 
 #[test]
 fn test_full_export_pipeline() {
     // Skip if ffmpeg not available
-    let ffmpeg_check = Command::new("ffmpeg")
-        .arg("-version")
-        .output();
+    let ffmpeg_check = Command::new("ffmpeg").arg("-version").output();
     if ffmpeg_check.is_err() || !ffmpeg_check.unwrap().status.success() {
         eprintln!("Skipping: ffmpeg not available");
         return;
@@ -35,18 +35,26 @@ fn test_full_export_pipeline() {
     let gen = Command::new("ffmpeg")
         .args([
             "-y",
-            "-f", "lavfi",
-            "-i", "color=c=blue:s=160x90:d=2:r=10",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-t", "2",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=160x90:d=2:r=10",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-t",
+            "2",
             &input_path,
         ])
         .output()
         .expect("Failed to generate test video");
 
-    assert!(gen.status.success(), "Failed to create test video: {:?}", 
-        String::from_utf8_lossy(&gen.stderr));
+    assert!(
+        gen.status.success(),
+        "Failed to create test video: {:?}",
+        String::from_utf8_lossy(&gen.stderr)
+    );
     assert!(Path::new(&input_path).exists());
 
     // Set up calibration (simple rectangular keyboard)
@@ -115,7 +123,15 @@ fn test_full_export_pipeline() {
 
     // Verify with ffprobe
     let probe = Command::new("ffprobe")
-        .args(["-v", "error", "-show_format", "-show_streams", "-print_format", "json", &output_path])
+        .args([
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-print_format",
+            "json",
+            &output_path,
+        ])
         .output()
         .expect("ffprobe failed");
     assert!(probe.status.success(), "ffprobe failed on output");
@@ -128,7 +144,10 @@ fn test_full_export_pipeline() {
 
     // Check progress
     let progress = pipeline.get_progress();
-    assert_eq!(progress.status, piano_overlay_native::export::ExportStatus::Complete);
+    assert_eq!(
+        progress.status,
+        piano_overlay_native::export::ExportStatus::Complete
+    );
     assert!(progress.current_frame > 0);
 
     // Cleanup

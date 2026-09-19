@@ -2,9 +2,9 @@
 //! All functions here are callable from the Flutter UI layer.
 
 use crate::midi;
-use crate::video;
-use crate::project::types::Project;
 use crate::midi::types::{MidiFileData, MidiFileSummary};
+use crate::project::types::Project;
+use crate::video;
 use crate::video::VideoMetadata;
 
 /// Parse a MIDI file and return structured data with absolute millisecond timing.

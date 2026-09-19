@@ -58,24 +58,28 @@ fn validate_corners(corners: &KeyboardCorners) -> Result<(), String> {
             if dist < 5.0 {
                 return Err(format!(
                     "Corner points {} and {} are too close together ({:.1}px). Spread them apart.",
-                    i + 1, j + 1, dist
+                    i + 1,
+                    j + 1,
+                    dist
                 ));
             }
         }
     }
 
     // Check for collinearity using cross-product area
-    let area = 0.5 * ((pts[1].x - pts[0].x) * (pts[3].y - pts[0].y)
-        - (pts[3].x - pts[0].x) * (pts[1].y - pts[0].y)).abs()
-        + 0.5 * ((pts[2].x - pts[1].x) * (pts[3].y - pts[1].y)
-        - (pts[3].x - pts[1].x) * (pts[2].y - pts[1].y)).abs();
+    let area = 0.5
+        * ((pts[1].x - pts[0].x) * (pts[3].y - pts[0].y)
+            - (pts[3].x - pts[0].x) * (pts[1].y - pts[0].y))
+            .abs()
+        + 0.5
+            * ((pts[2].x - pts[1].x) * (pts[3].y - pts[1].y)
+                - (pts[3].x - pts[1].x) * (pts[2].y - pts[1].y))
+                .abs();
 
     if area < 100.0 {
-        return Err(
-            "Corner points are nearly collinear (area too small). \
+        return Err("Corner points are nearly collinear (area too small). \
              Place corners at the four corners of the keyboard."
-                .to_string(),
-        );
+            .to_string());
     }
 
     Ok(())
@@ -84,6 +88,7 @@ fn validate_corners(corners: &KeyboardCorners) -> Result<(), String> {
 /// Compute 3x3 homography matrix mapping src points to dst points.
 /// Uses the direct 8×8 linear system with h33=1 constraint.
 /// Returns error if the system is singular (degenerate point configuration).
+#[allow(clippy::identity_op)] // `+ 0` keeps the matrix column indices aligned
 fn compute_homography(src: &[Point2D; 4], dst: &[Point2D; 4]) -> Result<[[f64; 3]; 3], String> {
     let mut a_data = [0.0f64; 64]; // 8×8
     let mut b_data = [0.0f64; 8];
@@ -122,11 +127,9 @@ fn compute_homography(src: &[Point2D; 4], dst: &[Point2D; 4]) -> Result<[[f64; 3
     // Check solution quality: verify the determinant is not near-zero
     let det = lu.determinant();
     if det.abs() < 1e-10 {
-        return Err(
-            "Calibration failed: corner points are nearly degenerate \
+        return Err("Calibration failed: corner points are nearly degenerate \
              (matrix determinant near zero). Reposition corners for better accuracy."
-                .to_string(),
-        );
+            .to_string());
     }
 
     let mut h = [[0.0f64; 3]; 3];
@@ -260,8 +263,7 @@ mod tests {
             Point2D::new(100.0, 50.0),
             Point2D::new(0.0, 50.0),
         ];
-        let h = compute_homography(&src, &src)
-            .expect("identity homography should succeed");
+        let h = compute_homography(&src, &src).expect("identity homography should succeed");
 
         let p = Point2D::new(50.0, 25.0);
         let result = transform_point(&h, &p);
@@ -284,8 +286,7 @@ mod tests {
             Point2D::new(200.0, 100.0),
             Point2D::new(0.0, 100.0),
         ];
-        let h = compute_homography(&src, &dst)
-            .expect("scale homography should succeed");
+        let h = compute_homography(&src, &dst).expect("scale homography should succeed");
 
         let p = transform_point(&h, &Point2D::new(0.5, 0.5));
         assert!((p.x - 100.0).abs() < 0.1);

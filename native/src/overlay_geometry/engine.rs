@@ -1,7 +1,9 @@
+use super::types::{
+    FallDirection, KeyHighlight, NoteStrip, OverlayFrame, OverlayStyle, SyncSettings,
+};
+use crate::calibration::Point2D;
 use crate::calibration::{transform_point, CalibrationData};
 use crate::midi::types::MidiNote;
-use super::types::{FallDirection, KeyHighlight, NoteStrip, OverlayFrame, OverlayStyle, SyncSettings};
-use crate::calibration::Point2D;
 
 /// The shared overlay geometry engine.
 /// Computes the exact same OverlayFrame data for both preview and export rendering.
@@ -24,7 +26,8 @@ impl OverlayEngine {
         let mut key_highlights = Vec::new();
 
         for note in &visible_notes {
-            if let Some(strip) = Self::compute_note_strip(note, effective_time, calibration, style) {
+            if let Some(strip) = Self::compute_note_strip(note, effective_time, calibration, style)
+            {
                 strips.push(strip);
             }
 
@@ -50,7 +53,7 @@ impl OverlayEngine {
         style: &OverlayStyle,
     ) -> Vec<&'a MidiNote> {
         let lookahead = if style.show_before_play {
-            style.lookahead_ms as f64
+            style.lookahead_ms
         } else {
             0.0
         };
@@ -70,14 +73,12 @@ impl OverlayEngine {
                     && note_start <= time_ms + lookahead;
 
                 // Note is currently active
-                let is_active = style.show_during_play
-                    && note_start <= time_ms
-                    && note_end >= time_ms;
+                let is_active =
+                    style.show_during_play && note_start <= time_ms && note_end >= time_ms;
 
                 // Note recently ended (trail effect, show for a brief moment)
-                let just_ended = style.show_during_play
-                    && note_end < time_ms
-                    && note_end > time_ms - 100.0;
+                let just_ended =
+                    style.show_during_play && note_end < time_ms && note_end > time_ms - 100.0;
 
                 in_lookahead || is_active || just_ended
             })
@@ -120,9 +121,9 @@ impl OverlayEngine {
         let (y_top, y_bottom) = match style.fall_direction {
             FallDirection::TopToBottom => {
                 let y_start = -(note_start_offset * pixels_per_ms); // strip leading edge
-                let y_end = -(note_end_offset * pixels_per_ms);     // strip trailing edge
-                // Clamp to visible range
-                let y_bottom = y_start.min(0.0);   // Can't go past keyboard
+                let y_end = -(note_end_offset * pixels_per_ms); // strip trailing edge
+                                                                // Clamp to visible range
+                let y_bottom = y_start.min(0.0); // Can't go past keyboard
                 let y_top = y_end.min(y_bottom);
                 (y_top, y_bottom)
             }
@@ -278,7 +279,7 @@ mod tests {
 
         // At time 1100, first note (C4) is active, second note (E4) is in lookahead
         let frame = OverlayEngine::compute_frame(1100.0, &notes, &cal, &style, &sync);
-        assert!(frame.strips.len() >= 1);
+        assert!(!frame.strips.is_empty());
         assert_eq!(frame.key_highlights.len(), 1); // C4 is active
     }
 

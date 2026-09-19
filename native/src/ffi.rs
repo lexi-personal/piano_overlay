@@ -1,5 +1,9 @@
 //! C-compatible FFI interface for calling from Dart via dart:ffi.
 //! Each function takes/returns C strings (JSON) for maximum simplicity.
+//!
+//! Every entry point here is a C ABI boundary that receives borrowed C strings
+//! from the caller, so raw-pointer dereferences are inherent to the design.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -83,8 +87,7 @@ pub extern "C" fn ffi_compute_calibration(input_json: *const c_char) -> *mut c_c
             _ => KeyboardSize::Keys88,
         };
 
-        let calibration = compute_calibration(&corners, size)
-            .map_err(|e| e.to_string())?;
+        let calibration = compute_calibration(&corners, size).map_err(|e| e.to_string())?;
         serde_json::to_string(&calibration).map_err(|e| e.to_string())
     })();
 
@@ -203,8 +206,8 @@ pub extern "C" fn ffi_save_project(input_json: *const c_char) -> *mut c_char {
             serde_json::from_str(input_str).map_err(|e| e.to_string())?;
 
         let path = input["path"].as_str().ok_or("Missing 'path' field")?;
-        let project_json = serde_json::to_string_pretty(&input["project"])
-            .map_err(|e| e.to_string())?;
+        let project_json =
+            serde_json::to_string_pretty(&input["project"]).map_err(|e| e.to_string())?;
 
         std::fs::write(path, &project_json).map_err(|e| e.to_string())?;
 
