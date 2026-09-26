@@ -436,33 +436,31 @@ class OverlayGeometry {
       return _countWhiteKeysBelow(pitch, lowestNote) + 0.5;
     }
 
-    // Black key: position relative to adjacent white keys.
+    // Black key: a black key straddles the seam between two white keys, and
+    // `whiteBelow` is exactly that seam because it counts every white key to
+    // the left. Real keyboards nudge the keys within a group away from the
+    // seam rather than sitting dead on it.
     final whiteBelow = _countWhiteKeysBelow(pitch, lowestNote);
-    final semitone = pitch % 12;
+    return whiteBelow + _blackKeySeamOffset(pitch % 12);
+  }
 
-    // Black key offsets within the white-key gap.
-    double offset;
+  /// How far a black key's centre sits from the seam between its neighbouring
+  /// white keys, in white-key widths.
+  static double _blackKeySeamOffset(int semitone) {
     switch (semitone) {
       case 1: // C#
-        offset = 0.55;
-        break;
+        return -0.05;
       case 3: // D#
-        offset = 0.75;
-        break;
+        return 0.05;
       case 6: // F#
-        offset = 0.50;
-        break;
+        return -0.10;
       case 8: // G#
-        offset = 0.62;
-        break;
+        return 0.0;
       case 10: // A#
-        offset = 0.74;
-        break;
+        return 0.10;
       default:
-        offset = 0.5;
+        return 0.0;
     }
-
-    return whiteBelow + offset;
   }
 
   /// Count non-black keys from [lowest] up to (but not including) [note].

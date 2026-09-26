@@ -209,23 +209,24 @@ fn key_x_bounds(note: u8, keyboard_size: KeyboardSize) -> (f64, f64) {
     let lowest = keyboard_size.lowest_note();
 
     if is_black_key(note) {
-        // Black key: position relative to the white key to its left
+        // A black key straddles the seam between two white keys, and
+        // `white_index` is exactly that seam: it counts every white key to the
+        // left of this note. Real keyboards nudge the keys within a group away
+        // from the seam rather than sitting dead on it.
         let white_index = count_white_keys_below(note, lowest) as f64;
         let semitone = note % 12;
 
-        // Black key offsets from left white key edge (based on real piano geometry)
-        // These give the center position as fraction past the left white key
-        let center_offset = match semitone {
-            1 => 0.55,  // C#
-            3 => 0.75,  // D#
-            6 => 0.50,  // F#
-            8 => 0.62,  // G#
-            10 => 0.74, // A#
-            _ => 0.5,
+        let seam_offset = match semitone {
+            1 => -0.05,  // C#
+            3 => 0.05,   // D#
+            6 => -0.10,  // F#
+            8 => 0.0,    // G#
+            10 => 0.10,  // A#
+            _ => 0.0,
         };
 
-        let center_x = white_index + center_offset;
-        let half_width = 0.30; // Black key is 0.6 units wide
+        let center_x = white_index + seam_offset;
+        let half_width = 0.29; // Black key is ~0.58 white keys wide
         (center_x - half_width, center_x + half_width)
     } else {
         // White key: sequential position

@@ -48,6 +48,27 @@ OverlayFrameData _frame(OverlayStyle style, {List<MidiNote>? notes}) =>
 double _width(NoteStripRenderData strip) =>
     (strip.quad[2] - strip.quad[3]).distance;
 
+double _centreX(NoteStripRenderData strip) =>
+    strip.quad.map((p) => p.dx).reduce((a, b) => a + b) / strip.quad.length;
+
+/// Centre of the strip drawn for [pitch], in display pixels.
+double _keyCentre(int pitch) {
+  final frame = _frame(
+    const OverlayStyle(),
+    notes: [
+      MidiNote(
+        pitch: pitch,
+        velocity: 100,
+        startMs: 1000,
+        durationMs: 500,
+        channel: 0,
+        track: 0,
+      ),
+    ],
+  );
+  return _centreX(frame.strips.single);
+}
+
 void main() {
   group('strip shape', () {
     test('strip width follows the thickness slider', () {
@@ -267,5 +288,56 @@ void main() {
     expect(json['fall_direction'], 'BottomToTop');
     expect(json['border_color'], isA<List<double>>());
     expect(json['key_highlight_color'], isA<List<double>>());
+  });
+
+  group('key placement', () {
+    // The calibration maps one white key to 10 display pixels.
+    const whiteKey = 10.0;
+
+    test('a black key sits between its two neighbouring white keys', () {
+      // C#4 between C4 and D4, D#4 between D4 and E4, and so on.
+      const pairs = {
+        61: [60, 62],
+        63: [62, 64],
+        66: [65, 67],
+        68: [67, 69],
+        70: [69, 71],
+      };
+
+      pairs.forEach((black, neighbours) {
+        final centre = _keyCentre(black);
+        final left = _keyCentre(neighbours[0]);
+        final right = _keyCentre(neighbours[1]);
+
+        expect(centre, greaterThan(left),
+            reason: 'black key $black must be right of white ${neighbours[0]}');
+        expect(centre, lessThan(right),
+            reason: 'black key $black must be left of white ${neighbours[1]}');
+      });
+    });
+
+    test('a black key never lands on top of a white key', () {
+      for (final black in [61, 63, 66, 68, 70]) {
+        for (final white in [60, 62, 64, 65, 67, 69, 71]) {
+          expect((_keyCentre(black) - _keyCentre(white)).abs(),
+              greaterThan(whiteKey * 0.3),
+              reason: 'black $black overlaps white $white');
+        }
+      }
+    });
+
+    test('a black key straddles the seam between the white keys', () {
+      // The seam between C4 and D4 is halfway between their centres.
+      final seam = (_keyCentre(60) + _keyCentre(62)) / 2;
+      expect(_keyCentre(61), closeTo(seam, whiteKey * 0.15));
+    });
+
+    test('white keys stay evenly spaced one key apart', () {
+      const whites = [60, 62, 64, 65, 67, 69, 71, 72];
+      for (var i = 1; i < whites.length; i++) {
+        expect(_keyCentre(whites[i]) - _keyCentre(whites[i - 1]),
+            closeTo(whiteKey, 0.001));
+      }
+    });
   });
 }
