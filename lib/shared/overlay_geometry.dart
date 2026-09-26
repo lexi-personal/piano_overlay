@@ -57,38 +57,36 @@ class OverlayGeometry {
       displayOffsetY,
     );
 
-    // --- Build the fall lane using LINEAR extrapolation ---
-    // Top-to-bottom hangs the lane above the keyboard's far edge (y = 0);
-    // bottom-to-top hangs it below the near edge (y = 1).
+    // --- Build the fall lane as an upright, screen-space wall ---
+    // Notes travel straight up/down the screen rather than receding along the
+    // keyboard plane. Extrapolating the homography past the keyboard degenerates
+    // on angled shots -- the plane runs to the horizon, so the lane slides
+    // sideways and eventually inverts. An upright wall cannot do either.
+    //
+    // Top-to-bottom stands the wall on the keyboard's far edge (y = 0) and
+    // rises up the screen; bottom-to-top stands it on the near edge (y = 1)
+    // and drops down the screen.
     final anchorY = style.fallDirection == FallDirection.bottomToTop ? 1.0 : 0.0;
-    final laneDir = style.fallDirection == FallDirection.bottomToTop ? 1.0 : -1.0;
+    final riseSign = style.fallDirection == FallDirection.bottomToTop ? 1.0 : -1.0;
 
     // Keyboard edge via homography (within calibrated region, safe).
     final kbLeft = _transformPoint(h, 0.0, anchorY);
     final kbRight = _transformPoint(h, whiteKeys.toDouble(), anchorY);
 
-    // Points one keyboard height away (small extrapolation, still safe).
-    final aboveLeft = _transformPoint(h, 0.0, anchorY + laneDir);
-    final aboveRight = _transformPoint(h, whiteKeys.toDouble(), anchorY + laneDir);
+    // A wall of constant height in the world looks taller where it is nearer
+    // the camera. The keyboard's own depth at a given x is the perspective cue
+    // for that, and it is measured entirely inside the calibrated quad, so it
+    // can never blow up the way an extrapolation can.
+    final laneHeightLeft = _laneHeightAt(h, 0.0);
+    final laneHeightRight = _laneHeightAt(h, whiteKeys.toDouble());
 
-    // Direction vectors (per unit of canonical height).
-    final dirLeft = Offset(
-      aboveLeft.dx - kbLeft.dx,
-      aboveLeft.dy - kbLeft.dy,
-    );
-    final dirRight = Offset(
-      aboveRight.dx - kbRight.dx,
-      aboveRight.dy - kbRight.dy,
-    );
-
-    // Scale direction by canonicalStripHeight to get lane top corners.
     final laneTopLeft = Offset(
-      kbLeft.dx + dirLeft.dx * _canonicalStripHeight,
-      kbLeft.dy + dirLeft.dy * _canonicalStripHeight,
+      kbLeft.dx,
+      kbLeft.dy + riseSign * laneHeightLeft,
     );
     final laneTopRight = Offset(
-      kbRight.dx + dirRight.dx * _canonicalStripHeight,
-      kbRight.dy + dirRight.dy * _canonicalStripHeight,
+      kbRight.dx,
+      kbRight.dy + riseSign * laneHeightRight,
     );
 
     final fallLaneQuad = [kbLeft, kbRight, laneTopRight, laneTopLeft];
@@ -119,14 +117,22 @@ class OverlayGeometry {
       // Fractional x positions for left/right edges of the key strip.
       final widthUnit = isBlack ? _blackStripWidthUnit : _whiteStripWidthUnit;
       final halfWidth = widthUnit * style.stripThickness / 2.0;
-      final fxLeft = (keyX - halfWidth) / whiteKeys;
-      final fxRight = (keyX + halfWidth) / whiteKeys;
+      final uLeft = keyX - halfWidth;
+      final uRight = keyX + halfWidth;
 
-      // Bilinear interpolation for 4 quad corners.
-      final bottomLeft = _lanePoint(kbLeft, kbRight, laneTopLeft, laneTopRight, fxLeft, tBottom);
-      final bottomRight = _lanePoint(kbLeft, kbRight, laneTopLeft, laneTopRight, fxRight, tBottom);
-      final topRight = _lanePoint(kbLeft, kbRight, laneTopLeft, laneTopRight, fxRight, tTop);
-      final topLeft = _lanePoint(kbLeft, kbRight, laneTopLeft, laneTopRight, fxLeft, tTop);
+      // Anchor the strip to its own key: the landing edge comes straight from
+      // that key's calibrated boundaries, and the strip rises vertically from
+      // there. Nothing is interpolated across the whole lane, so a note always
+      // lines up with the key it belongs to.
+      final baseLeft = _transformPoint(h, uLeft, anchorY);
+      final baseRight = _transformPoint(h, uRight, anchorY);
+      final heightLeft = _laneHeightAt(h, uLeft, whiteKeys.toDouble());
+      final heightRight = _laneHeightAt(h, uRight, whiteKeys.toDouble());
+
+      final bottomLeft = _lanePoint(baseLeft, heightLeft, riseSign, tBottom);
+      final bottomRight = _lanePoint(baseRight, heightRight, riseSign, tBottom);
+      final topRight = _lanePoint(baseRight, heightRight, riseSign, tTop);
+      final topLeft = _lanePoint(baseLeft, heightLeft, riseSign, tTop);
 
       // Determine color.
       Color baseColor;
@@ -174,27 +180,32 @@ class OverlayGeometry {
     );
   }
 
-  /// Bilinear interpolation within the fall lane.
-  ///
-  /// Bottom row = lerp(kbLeft, kbRight, fx)
-  /// Top row = lerp(laneTopLeft, laneTopRight, fx)
-  /// Result = lerp(bottom, top, t)
+  /// A point on the upright lane: [base] is the landing edge, and the lane
+  /// rises [riseSign] * [height] pixels away from it over the full lookahead.
   static Offset _lanePoint(
-    Offset kbLeft,
-    Offset kbRight,
-    Offset laneTopLeft,
-    Offset laneTopRight,
-    double fx,
+    Offset base,
+    double height,
+    double riseSign,
     double t,
   ) {
-    final bottomX = kbLeft.dx + (kbRight.dx - kbLeft.dx) * fx;
-    final bottomY = kbLeft.dy + (kbRight.dy - kbLeft.dy) * fx;
-    final topX = laneTopLeft.dx + (laneTopRight.dx - laneTopLeft.dx) * fx;
-    final topY = laneTopLeft.dy + (laneTopRight.dy - laneTopLeft.dy) * fx;
-    return Offset(
-      bottomX + (topX - bottomX) * t,
-      bottomY + (topY - bottomY) * t,
-    );
+    return Offset(base.dx, base.dy + riseSign * height * t);
+  }
+
+  /// On-screen height of the lane above the key at canonical x [u], in pixels.
+  ///
+  /// The keyboard's own depth at that x is the perspective cue: a wall of
+  /// constant world height looks taller where it is nearer the camera. [u] is
+  /// clamped into the calibrated span so the measurement never leaves the quad
+  /// -- extrapolating past it is exactly what made the old lane degenerate.
+  static double _laneHeightAt(
+    List<List<double>> h,
+    double u, [
+    double? whiteKeys,
+  ]) {
+    final clamped = whiteKeys == null ? u : u.clamp(0.0, whiteKeys);
+    final far = _transformPoint(h, clamped, 0.0);
+    final near = _transformPoint(h, clamped, 1.0);
+    return (near - far).distance * _canonicalStripHeight;
   }
 
   /// Apply sync offset to playback time.

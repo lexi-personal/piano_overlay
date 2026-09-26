@@ -56,6 +56,30 @@ Rust Core (Business Logic)
     └── Project Management (.pvproj JSON)
 ```
 
+### How note strips are placed
+
+The calibration gives a homography mapping a canonical keyboard rectangle onto the four corners
+you placed in the video. Each note strip is anchored to **its own key**: the left and right edges
+of the strip come from that key's boundaries on the keyboard edge, so a strip always lands on the
+key it belongs to.
+
+From there the strip rises straight up the screen (or drops straight down, with a bottom-to-top
+fall direction) — an upright wall standing behind the keys, not a road receding along the tabletop.
+Each end's height is scaled by the keyboard's own depth at that point, so the near side of the
+keyboard gets a taller lane than the far side and perspective still reads correctly.
+
+This matters on angled shots. Extending the lane *along the keyboard plane* degenerates as the
+plane runs toward the horizon: the lane slides sideways instead of rising, and past a certain
+angle it crosses the horizon and inverts, producing a twisted, self-intersecting quad. The upright
+lane is measured entirely inside the calibrated quad and can do neither.
+
+It is not a full 3D reconstruction, though: at extreme angles the projected keys can still overlap
+or occlude one another.
+
+The same geometry is implemented twice — `lib/shared/overlay_geometry.dart` for the live preview
+and `native/src/overlay_geometry/engine.rs` for the export — and the two **must** stay in sync, or
+the exported video will not match what you previewed.
+
 ## Prerequisites
 
 - **Flutter** ≥ 3.3.0

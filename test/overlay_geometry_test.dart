@@ -70,6 +70,8 @@ double _keyCentre(int pitch) {
 }
 
 void main() {
+  _angledLaneTests();
+
   group('strip shape', () {
     test('strip width follows the thickness slider', () {
       final thin = _frame(const OverlayStyle(stripThickness: 0.5));
@@ -338,6 +340,123 @@ void main() {
         expect(_keyCentre(whites[i]) - _keyCentre(whites[i - 1]),
             closeTo(whiteKey, 0.001));
       }
+    });
+  });
+}
+
+/// The real calibration from an angled hand-held shot. Extending the lane
+/// along the keyboard plane here sends the low end 1066 px off the left of a
+/// 1920 px frame while the high end barely rises -- the bug this guards.
+CalibrationData _angledCalibration() => const CalibrationData(
+      corners: KeyboardCorners(
+        topLeft: Point2D(694.235294117647, 1131.8663101604277),
+        topRight: Point2D(1248.8021390374333, 495.5775401069518),
+        bottomRight: Point2D(1347.2727272727273, 508.6363636363636),
+        bottomLeft: Point2D(1006.3636363636375, 1195.9090909090908),
+      ),
+      keyboardSize: KeyboardSize.keys88,
+      homography: [
+        [65.34338890552743, 281.01014246523897, 694.235294117647],
+        [9.462476689090588, 27.063565020046255, 1131.8663101604277],
+        [0.043784872061466105, -0.030921427063077437, 1.0],
+      ],
+      keyPositions: [],
+      calibrationWidth: 1920,
+      calibrationHeight: 1080,
+    );
+
+NoteStripRenderData _angledStrip(int pitch) {
+  final frame = OverlayGeometry.computeFrame(
+    timestampMs: 0,
+    notes: [
+      MidiNote(
+        pitch: pitch,
+        velocity: 100,
+        startMs: 0,
+        durationMs: 2000,
+        channel: 0,
+        track: 0,
+      ),
+    ],
+    calibration: _angledCalibration(),
+    style: const OverlayStyle(),
+    sync: const SyncSettings(),
+    displayWidth: 1920,
+    displayHeight: 1080,
+  );
+  return frame.strips.single;
+}
+
+void _angledLaneTests() {
+  group('upright fall lane', () {
+    test('strips rise vertically instead of sliding sideways', () {
+      for (final pitch in [21, 48, 72, 108]) {
+        final quad = _angledStrip(pitch).quad; // topLeft, topRight, BR, BL
+        final topLeft = quad[0];
+        final bottomLeft = quad[3];
+
+        expect(
+          topLeft.dx,
+          closeTo(bottomLeft.dx, 0.001),
+          reason: 'pitch $pitch drifted sideways along the lane',
+        );
+        expect(
+          topLeft.dy,
+          lessThan(bottomLeft.dy),
+          reason: 'pitch $pitch should rise up the screen',
+        );
+      }
+    });
+
+    test('every strip lands on its own key, left to right', () {
+      double landingX(int pitch) {
+        final quad = _angledStrip(pitch).quad;
+        return (quad[2].dx + quad[3].dx) / 2;
+      }
+
+      var previous = double.negativeInfinity;
+      for (var pitch = 21; pitch <= 108; pitch++) {
+        final x = landingX(pitch);
+        expect(
+          x,
+          greaterThan(previous),
+          reason: 'pitch $pitch landed left of the note below it',
+        );
+        previous = x;
+      }
+    });
+
+    test('the lane never leaves the frame sideways', () {
+      final frame = OverlayGeometry.computeFrame(
+        timestampMs: 0,
+        notes: const [],
+        calibration: _angledCalibration(),
+        style: const OverlayStyle(),
+        sync: const SyncSettings(),
+        displayWidth: 1920,
+        displayHeight: 1080,
+      );
+      final lane = frame.fallLaneQuad!;
+      for (final p in lane) {
+        expect(p.dx, greaterThanOrEqualTo(0));
+        expect(p.dx, lessThanOrEqualTo(1920));
+      }
+    });
+
+    test('the lane is taller on the near side than the far side', () {
+      final frame = OverlayGeometry.computeFrame(
+        timestampMs: 0,
+        notes: const [],
+        calibration: _angledCalibration(),
+        style: const OverlayStyle(),
+        sync: const SyncSettings(),
+        displayWidth: 1920,
+        displayHeight: 1080,
+      );
+      final lane = frame.fallLaneQuad!; // kbLeft, kbRight, topRight, topLeft
+      final leftHeight = (lane[0].dy - lane[3].dy).abs();
+      final rightHeight = (lane[1].dy - lane[2].dy).abs();
+      expect(leftHeight, greaterThan(rightHeight));
     });
   });
 }
