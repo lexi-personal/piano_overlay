@@ -217,11 +217,11 @@ fn key_x_bounds(note: u8, keyboard_size: KeyboardSize) -> (f64, f64) {
         let semitone = note % 12;
 
         let seam_offset = match semitone {
-            1 => -0.05,  // C#
-            3 => 0.05,   // D#
-            6 => -0.10,  // F#
-            8 => 0.0,    // G#
-            10 => 0.10,  // A#
+            1 => -0.05, // C#
+            3 => 0.05,  // D#
+            6 => -0.10, // F#
+            8 => 0.0,   // G#
+            10 => 0.10, // A#
             _ => 0.0,
         };
 
