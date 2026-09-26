@@ -16,6 +16,7 @@ class _AbletonImportDialogState extends State<AbletonImportDialog> {
   String? _error;
   final Set<int> _selectedTracks = {};
   int? _selectedAudioIndex;
+  bool _showSamples = false;
 
   Future<void> _pickFile() async {
     String? path;
@@ -163,20 +164,89 @@ class _AbletonImportDialogState extends State<AbletonImportDialog> {
         ],
         if (r.audioFiles.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text('Audio Files', style: Theme.of(context).textTheme.titleSmall),
+          Text('Media source', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text(
+            'Optional. Picking an audio file here replaces the media loaded in '
+            'the workspace, so the overlay plays against that audio instead of '
+            'your video. Leave it on "Keep current video" to only import MIDI.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 8),
-          for (int i = 0; i < r.audioFiles.length; i++)
-            RadioListTile<int>(
-              value: i,
-              groupValue: _selectedAudioIndex,
-              onChanged: (v) => setState(() => _selectedAudioIndex = v),
-              title: Text(r.audioFiles[i].name),
-              subtitle: Text(_formatSize(r.audioFiles[i].sizeBytes)),
-              dense: true,
+          RadioListTile<int?>(
+            value: null,
+            groupValue: _selectedAudioIndex,
+            onChanged: (v) => setState(() => _selectedAudioIndex = v),
+            title: const Text('Keep current video'),
+            dense: true,
+          ),
+          ..._audioTiles(_recordings(r)),
+          if (_recordings(r).isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Text(
+                'This project has no bounces or recorded clips — only sampler '
+                'instrument samples, which are not what you want here.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ),
+          if (_samples(r).isNotEmpty) ...[
+            const SizedBox(height: 4),
+            InkWell(
+              onTap: () => setState(() => _showSamples = !_showSamples),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(_showSamples
+                        ? Icons.expand_less
+                        : Icons.expand_more),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Instrument samples (${_samples(r).length}) — single '
+                        'notes from a sampler, rarely useful',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_showSamples) ..._audioTiles(_samples(r)),
+          ],
         ],
       ],
     );
+  }
+
+  List<AbletonAudioFile> _recordings(AbletonParseResult r) => r.audioFiles
+      .where((a) => a.kind == AbletonAudioKind.recording)
+      .toList();
+
+  List<AbletonAudioFile> _samples(AbletonParseResult r) => r.audioFiles
+      .where((a) => a.kind == AbletonAudioKind.instrumentSample)
+      .toList();
+
+  /// Radio tiles keyed by each file's index in the full `audioFiles` list, so
+  /// splitting the list into groups does not change what a selection means.
+  List<Widget> _audioTiles(List<AbletonAudioFile> files) {
+    final all = _result!.audioFiles;
+    return [
+      for (final file in files)
+        RadioListTile<int?>(
+          value: all.indexOf(file),
+          groupValue: _selectedAudioIndex,
+          onChanged: (v) => setState(() => _selectedAudioIndex = v),
+          title: Text(file.name),
+          subtitle: Text([
+            'Replace video',
+            if (file.relativeDir.isNotEmpty) file.relativeDir,
+            _formatSize(file.sizeBytes),
+          ].join(' • ')),
+          dense: true,
+        ),
+    ];
   }
 
   Widget _buildActions() {

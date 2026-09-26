@@ -1,6 +1,8 @@
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'video_rendering.dart';
+
 /// Service wrapping media_kit for video playback.
 /// Provides a single player instance per preview session.
 class VideoPlayerService {
@@ -13,7 +15,7 @@ class VideoPlayerService {
   }
 
   VideoController get videoController {
-    _videoController ??= VideoController(player);
+    _videoController ??= VideoRendering.controllerFor(player);
     return _videoController!;
   }
 

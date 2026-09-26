@@ -155,7 +155,16 @@ void main() {
 
       fast.start();
       expect(fast.isRunning, isTrue);
-      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      // Wait for the timer to actually fire rather than sleeping a fixed
+      // amount, which makes this flaky on a loaded machine.
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      while (await RecoveryService.findSnapshot() == null) {
+        expect(DateTime.now().isBefore(deadline), isTrue,
+            reason: 'auto-save never wrote a snapshot');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
       await fast.stop();
 
       expect(await RecoveryService.findSnapshot(), isNotNull);
