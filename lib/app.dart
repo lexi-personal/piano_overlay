@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'features/home/home_screen.dart';
-import 'features/calibration/calibration_screen.dart';
 import 'features/export/export_screen.dart';
 import 'features/workspace/workspace_screen.dart';
 import 'services/project_provider.dart';
@@ -22,7 +21,6 @@ class PianoOverlayApp extends StatelessWidget {
           initialRoute: '/',
           routes: {
             '/': (context) => HomeScreen(provider: projectProvider),
-            '/calibrate': (context) => CalibrationScreen(provider: projectProvider),
             '/export': (context) => ExportScreen(provider: projectProvider),
             '/workspace': (context) => WorkspaceScreen(provider: projectProvider),
           },
