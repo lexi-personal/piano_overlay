@@ -15,6 +15,7 @@ import '../../models/calibration.dart';
 import '../../models/midi_note.dart';
 import '../../models/video_metadata.dart';
 import '../../shared/overlay_geometry.dart';
+import '../calibration/calibration_editor.dart';
 import '../preview/overlay_painter.dart';
 import 'ableton_import_dialog.dart';
 import 'timeline_panel.dart';
@@ -43,6 +44,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   late final RecoveryService _recovery;
   bool _timelineExpanded = false;
+
+  /// Non-null while the user is placing keyboard corners on the video.
+  CalibrationDraft? _calibrationDraft;
 
   @override
   void initState() {
@@ -315,6 +319,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Widget _buildCalibrationPanel() {
+    final draft = _calibrationDraft;
+    if (draft != null) {
+      return CalibrationEditorPanel(
+        draft: draft,
+        onChanged: () => setState(() {}),
+        onReset: () => setState(() => draft.corners.clear()),
+        onCancel: () => setState(() => _calibrationDraft = null),
+        onApply: _applyCalibration,
+      );
+    }
+
     final cal = widget.provider.project?.calibration;
     if (cal == null) {
       return Center(
@@ -326,7 +341,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             const Text('Calibration not set'),
             const SizedBox(height: 12),
             OutlinedButton(
-              onPressed: () => Navigator.pushNamed(context, '/calibrate'),
+              onPressed: _startCalibration,
               child: const Text('Calibrate Keyboard'),
             ),
           ],
@@ -340,12 +355,81 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         Text('Size: ${cal.keyboardSize.label}'),
         Text('Range: ${KeyRange.noteName(cal.keyRange.lowestNote)} – ${KeyRange.noteName(cal.keyRange.highestNote)}'),
         Text('White keys: ${cal.keyRange.whiteKeys}'),
+        if (cal.calibrationWidth <= 0 || cal.calibrationHeight <= 0) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'This calibration was saved by an older version and is not tied '
+            'to the video resolution. Recalibrate so the overlay lines up.',
+            style: TextStyle(fontSize: 12, color: Colors.orange),
+          ),
+        ],
         const SizedBox(height: 12),
         OutlinedButton(
-          onPressed: () => Navigator.pushNamed(context, '/calibrate'),
+          onPressed: _startCalibration,
           child: const Text('Recalibrate'),
         ),
       ],
+    );
+  }
+
+  /// Enter calibration mode on the video already loaded in the workspace.
+  ///
+  /// Calibration deliberately reuses this screen's player: opening a second
+  /// `media_kit` player for the same video deadlocks the app.
+  void _startCalibration() {
+    if (!widget.provider.hasVideo) {
+      _showError('Import a video before calibrating.');
+      return;
+    }
+    _player.pause();
+    setState(() {
+      _leftTab = 'calibrate';
+      _leftPanelOpen = true;
+      _calibrationDraft =
+          CalibrationDraft.from(widget.provider.project?.calibration);
+    });
+  }
+
+  void _applyCalibration() {
+    final draft = _calibrationDraft;
+    if (draft == null || !draft.isComplete) return;
+
+    final size = _videoFrameSize();
+    if (size == null) {
+      _showError('Could not determine the video resolution.');
+      return;
+    }
+
+    widget.provider.setCalibration(draft.toCalibration(
+      videoWidth: size.width,
+      videoHeight: size.height,
+    ));
+    setState(() => _calibrationDraft = null);
+  }
+
+  /// Native pixel size of the loaded video, used as the coordinate space for
+  /// calibration corners. Falls back to what the player reports when the
+  /// metadata probe could not determine it.
+  Size? _videoFrameSize() {
+    final meta = widget.provider.project?.video;
+    if (meta != null && meta.width > 0 && meta.height > 0) {
+      return Size(meta.width.toDouble(), meta.height.toDouble());
+    }
+    final w = _player.state.width ?? 0;
+    final h = _player.state.height ?? 0;
+    if (w > 0 && h > 0) return Size(w.toDouble(), h.toDouble());
+    return null;
+  }
+
+  /// The rectangle the video occupies inside [container] once letterboxing is
+  /// taken into account.
+  Rect _videoDisplayRect(Size container) {
+    final size = _videoFrameSize();
+    if (size == null) return Offset.zero & container;
+    return OverlayGeometry.fitVideoRect(
+      container: container,
+      videoWidth: size.width,
+      videoHeight: size.height,
     );
   }
 
@@ -605,21 +689,128 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return Stack(
       children: [
         Center(child: Video(controller: _videoController)),
-        if (widget.provider.hasCalibration && widget.provider.hasMidi && _overlayVisible)
-          Positioned.fill(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return CustomPaint(
-                  painter: _buildOverlayPainter(constraints.biggest),
-                );
-              },
-            ),
+        Positioned.fill(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final videoRect = _videoDisplayRect(constraints.biggest);
+              final draft = _calibrationDraft;
+              if (draft != null) {
+                return _buildCalibrationLayer(draft, videoRect);
+              }
+              if (widget.provider.hasCalibration &&
+                  widget.provider.hasMidi &&
+                  _overlayVisible) {
+                return CustomPaint(painter: _buildOverlayPainter(videoRect));
+              }
+              return const SizedBox.shrink();
+            },
           ),
+        ),
       ],
     );
   }
 
-  OverlayPainter _buildOverlayPainter(Size size) {
+  /// Interactive corner placement drawn on top of the video.
+  ///
+  /// Taps are converted from widget coordinates into video frame pixels, so a
+  /// calibration stays valid no matter how the window is resized later.
+  Widget _buildCalibrationLayer(CalibrationDraft draft, Rect videoRect) {
+    Offset toVideo(Offset local) {
+      final size = _videoFrameSize();
+      if (size == null || videoRect.width <= 0 || videoRect.height <= 0) {
+        return local;
+      }
+      return Offset(
+        ((local.dx - videoRect.left) / videoRect.width * size.width)
+            .clamp(0.0, size.width),
+        ((local.dy - videoRect.top) / videoRect.height * size.height)
+            .clamp(0.0, size.height),
+      );
+    }
+
+    Offset toDisplay(Offset video) {
+      final size = _videoFrameSize();
+      if (size == null || size.width <= 0 || size.height <= 0) return video;
+      return Offset(
+        videoRect.left + video.dx / size.width * videoRect.width,
+        videoRect.top + video.dy / size.height * videoRect.height,
+      );
+    }
+
+    final displayCorners = draft.corners.map(toDisplay).toList();
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) {
+              if (draft.corners.length >= 4) return;
+              if (!videoRect.contains(details.localPosition)) return;
+              setState(() => draft.corners.add(toVideo(details.localPosition)));
+            },
+            child: CustomPaint(
+              painter: CalibrationOverlayPainter(
+                corners: displayCorners,
+                showGrid: draft.showGrid,
+                whiteKeys: draft.keyRange.whiteKeys,
+              ),
+            ),
+          ),
+        ),
+        for (var i = 0; i < displayCorners.length; i++)
+          Positioned(
+            left: displayCorners[i].dx - 16,
+            top: displayCorners[i].dy - 16,
+            child: GestureDetector(
+              onPanUpdate: (details) {
+                setState(() {
+                  draft.corners[i] =
+                      toVideo(displayCorners[i] + details.delta);
+                });
+              },
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: calibrationCornerColor(i),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: Center(
+                  child: Text(
+                    '${i + 1}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 8,
+          child: Center(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(draft.instruction),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  OverlayPainter _buildOverlayPainter(Rect videoRect) {
     final project = widget.provider.project!;
     final cal = project.calibration!;
     final style = project.style;
@@ -632,8 +823,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       style: style,
       sync: sync,
       timestampMs: posMs,
-      displayWidth: size.width,
-      displayHeight: size.height,
+      displayWidth: videoRect.width,
+      displayHeight: videoRect.height,
+      displayOffsetX: videoRect.left,
+      displayOffsetY: videoRect.top,
       calibrationWidth: cal.calibrationWidth > 0 ? cal.calibrationWidth : null,
       calibrationHeight: cal.calibrationHeight > 0 ? cal.calibrationHeight : null,
     );

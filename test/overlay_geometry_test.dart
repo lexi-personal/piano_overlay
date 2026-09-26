@@ -167,6 +167,94 @@ void main() {
     });
   });
 
+  group('display mapping', () {
+    test('fitVideoRect letterboxes a wide video inside a square box', () {
+      final rect = OverlayGeometry.fitVideoRect(
+        container: const Size(400, 400),
+        videoWidth: 1920,
+        videoHeight: 1080,
+      );
+
+      expect(rect.width, closeTo(400, 0.001));
+      expect(rect.height, closeTo(225, 0.001));
+      expect(rect.left, closeTo(0, 0.001));
+      expect(rect.top, closeTo(87.5, 0.001));
+    });
+
+    test('fitVideoRect pillarboxes a tall video inside a square box', () {
+      final rect = OverlayGeometry.fitVideoRect(
+        container: const Size(400, 400),
+        videoWidth: 540,
+        videoHeight: 1080,
+      );
+
+      expect(rect.width, closeTo(200, 0.001));
+      expect(rect.height, closeTo(400, 0.001));
+      expect(rect.left, closeTo(100, 0.001));
+      expect(rect.top, closeTo(0, 0.001));
+    });
+
+    test('strips follow the scaled and letterboxed video rectangle', () {
+      OverlayFrameData frameAt({
+        required double width,
+        required double height,
+        double offsetX = 0,
+        double offsetY = 0,
+      }) =>
+          OverlayGeometry.computeFrame(
+            timestampMs: 0,
+            notes: const [_note],
+            calibration: _calibration(),
+            style: const OverlayStyle(),
+            sync: const SyncSettings(),
+            displayWidth: width,
+            displayHeight: height,
+            displayOffsetX: offsetX,
+            displayOffsetY: offsetY,
+            calibrationWidth: 520,
+            calibrationHeight: 480,
+          );
+
+      final base = frameAt(width: 520, height: 480);
+      final scaled = frameAt(width: 1040, height: 960);
+      final shifted = frameAt(width: 520, height: 480, offsetX: 30, offsetY: 70);
+
+      // Doubling the display doubles every coordinate.
+      expect(scaled.strips.first.quad[0].dx,
+          closeTo(base.strips.first.quad[0].dx * 2, 0.001));
+      expect(scaled.strips.first.quad[0].dy,
+          closeTo(base.strips.first.quad[0].dy * 2, 0.001));
+
+      // A letterbox offset translates the overlay by exactly that offset.
+      expect(shifted.strips.first.quad[0].dx,
+          closeTo(base.strips.first.quad[0].dx + 30, 0.001));
+      expect(shifted.strips.first.quad[0].dy,
+          closeTo(base.strips.first.quad[0].dy + 70, 0.001));
+    });
+
+    test('the keyboard edge of the lane lands on the calibrated corners', () {
+      final frame = OverlayGeometry.computeFrame(
+        timestampMs: 0,
+        notes: const [],
+        calibration: _calibration(),
+        style: const OverlayStyle(),
+        sync: const SyncSettings(),
+        displayWidth: 260,
+        displayHeight: 240,
+        displayOffsetX: 20,
+        displayOffsetY: 10,
+        calibrationWidth: 520,
+        calibrationHeight: 480,
+      );
+
+      // Corners are (0,400) and (520,400) at 520x480, halved and shifted.
+      expect(frame.fallLaneQuad![0].dx, closeTo(20, 0.001));
+      expect(frame.fallLaneQuad![0].dy, closeTo(210, 0.001));
+      expect(frame.fallLaneQuad![1].dx, closeTo(280, 0.001));
+      expect(frame.fallLaneQuad![1].dy, closeTo(210, 0.001));
+    });
+  });
+
   test('the native style payload carries every shape field', () {
     final json = const OverlayStyle(
       cornerRadius: 0.3,

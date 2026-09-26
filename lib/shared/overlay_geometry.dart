@@ -36,6 +36,8 @@ class OverlayGeometry {
     required double displayHeight,
     double? calibrationWidth,
     double? calibrationHeight,
+    double displayOffsetX = 0,
+    double displayOffsetY = 0,
   }) {
     final effectiveTime = _applySync(timestampMs, sync);
     final lookahead = style.lookaheadMs;
@@ -51,6 +53,8 @@ class OverlayGeometry {
       displayHeight,
       calibrationWidth,
       calibrationHeight,
+      displayOffsetX,
+      displayOffsetY,
     );
 
     // --- Build the fall lane using LINEAR extrapolation ---
@@ -202,36 +206,85 @@ class OverlayGeometry {
   }
 
   /// Get a homography scaled to the current display dimensions.
+  ///
+  /// [calibrationWidth]/[calibrationHeight] describe the coordinate space the
+  /// calibration corners were recorded in (the native video resolution), while
+  /// [displayWidth]/[displayHeight] and [displayOffsetX]/[displayOffsetY]
+  /// describe the rectangle the video is actually drawn into, letterbox offset
+  /// included.
   static List<List<double>> _getScaledHomography(
     CalibrationData calibration,
     double displayWidth,
     double displayHeight,
     double? calibrationWidth,
     double? calibrationHeight,
+    double displayOffsetX,
+    double displayOffsetY,
   ) {
-    if (calibrationWidth == null || calibrationHeight == null) {
+    if (calibrationWidth == null ||
+        calibrationHeight == null ||
+        calibrationWidth <= 0 ||
+        calibrationHeight <= 0) {
       return calibration.homography;
     }
 
     final sx = displayWidth / calibrationWidth;
     final sy = displayHeight / calibrationHeight;
 
-    if ((sx - 1.0).abs() < 1e-6 && (sy - 1.0).abs() < 1e-6) {
+    if ((sx - 1.0).abs() < 1e-6 &&
+        (sy - 1.0).abs() < 1e-6 &&
+        displayOffsetX.abs() < 1e-6 &&
+        displayOffsetY.abs() < 1e-6) {
       return calibration.homography;
     }
 
     // Rescale corners and recompute homography.
     final corners = calibration.corners;
     final scaledCorners = [
-      Offset(corners.topLeft.x * sx, corners.topLeft.y * sy),
-      Offset(corners.topRight.x * sx, corners.topRight.y * sy),
-      Offset(corners.bottomRight.x * sx, corners.bottomRight.y * sy),
-      Offset(corners.bottomLeft.x * sx, corners.bottomLeft.y * sy),
+      Offset(corners.topLeft.x * sx + displayOffsetX,
+          corners.topLeft.y * sy + displayOffsetY),
+      Offset(corners.topRight.x * sx + displayOffsetX,
+          corners.topRight.y * sy + displayOffsetY),
+      Offset(corners.bottomRight.x * sx + displayOffsetX,
+          corners.bottomRight.y * sy + displayOffsetY),
+      Offset(corners.bottomLeft.x * sx + displayOffsetX,
+          corners.bottomLeft.y * sy + displayOffsetY),
     ];
 
     return _computeHomography(
       calibration.keyRange.whiteKeys,
       scaledCorners,
+    );
+  }
+
+  /// The rectangle a video of [videoWidth] x [videoHeight] occupies when it is
+  /// drawn with `BoxFit.contain` inside [container].
+  ///
+  /// Both the preview overlay and the calibration editor use this so taps and
+  /// painted strips land on the same pixels as the video itself.
+  static Rect fitVideoRect({
+    required Size container,
+    required double videoWidth,
+    required double videoHeight,
+  }) {
+    if (videoWidth <= 0 ||
+        videoHeight <= 0 ||
+        container.width <= 0 ||
+        container.height <= 0) {
+      return Offset.zero & container;
+    }
+
+    final scale = (container.width / videoWidth) < (container.height / videoHeight)
+        ? container.width / videoWidth
+        : container.height / videoHeight;
+    final width = videoWidth * scale;
+    final height = videoHeight * scale;
+
+    return Rect.fromLTWH(
+      (container.width - width) / 2,
+      (container.height - height) / 2,
+      width,
+      height,
     );
   }
 

@@ -5,7 +5,7 @@ A Flutter desktop application that creates visual overlays of piano key presses 
 ## Features
 
 - **Import** MP4/MOV/AVI/MKV videos, MIDI files, and MIDI clips from Ableton `.als` sets
-- **Calibrate** keyboard position by placing 4 corners on the video frame (49/61/76/88 keys, or a custom range)
+- **Calibrate** keyboard position by placing 4 corners directly on the workspace video (49/61/76/88 keys, or a custom range)
 - **Sync** MIDI playback offset with video audio (±60s slider, ±10/±100 ms nudges, manual entry)
 - **Style** per-hand or per-key-type colors, glow, transparency, lane opacity, fall speed, lookahead,
   fall direction, key highlighting, background dim, and rounded or outlined note strips
@@ -17,7 +17,10 @@ A Flutter desktop application that creates visual overlays of piano key presses 
 
 Everything happens in the **workspace**: a left panel for files/calibration/sync, a right panel
 for style/export, the video with its live overlay in the centre, and a timeline at the bottom.
-Calibration and export open as dedicated full-screen steps.
+Calibration happens in place on the workspace video: the **Calibrate** tab puts you in a mode
+where you click the four keyboard corners directly on the frame and drag the handles to adjust.
+Corners are stored in video pixels, so the overlay keeps lining up when the window is resized.
+Export opens as a dedicated full-screen step.
 
 Projects are saved as `.pvproj` files (JSON). Use **Save** (`Ctrl+S`) or **Save As…** in the
 workspace toolbar; an orange dot next to the project name marks unsaved changes, and leaving the
@@ -35,7 +38,7 @@ its notes up with the performance.
 ## Architecture
 
 ```
-Flutter UI (Workspace + Calibration/Export screens)
+Flutter UI (Workspace with inline calibration + Export screen)
     ↓ (ChangeNotifier)
 ProjectProvider (State)
     ↓ (JSON over FFI)
