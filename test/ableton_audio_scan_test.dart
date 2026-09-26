@@ -18,6 +18,31 @@ const _als = '''
 </Ableton>
 ''';
 
+/// Two tracks sharing a name, with different clip counts — the situation that
+/// makes the import dialog ambiguous without a track number.
+const _duplicateNames = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<Ableton MajorVersion="5" MinorVersion="11.0_11300">
+  <LiveSet>
+    <Tracks>
+      <MidiTrack Id="8">
+        <Name><EffectiveName Value="Winter - Piano" /></Name>
+        <ClipSlotList>
+          <MidiClip Id="0"><Name Value="a" /></MidiClip>
+          <MidiClip Id="1"><Name Value="a" /></MidiClip>
+        </ClipSlotList>
+      </MidiTrack>
+      <MidiTrack Id="9">
+        <Name><EffectiveName Value="Winter - Piano" /></Name>
+        <ClipSlotList>
+          <MidiClip Id="2"><Name Value="a" /></MidiClip>
+        </ClipSlotList>
+      </MidiTrack>
+    </Tracks>
+  </LiveSet>
+</Ableton>
+''';
+
 void main() {
   late Directory project;
 
@@ -80,5 +105,17 @@ void main() {
     final files = await scan();
     expect(files.single.relativeDir, isEmpty);
     expect(files.single.kind, AbletonAudioKind.recording);
+  });
+
+  test('tracks sharing a name keep distinct positions and clip counts',
+      () async {
+    await File('${project.path}/Dupes.als')
+        .writeAsBytes(gzip.encode(utf8.encode(_duplicateNames)));
+
+    final r = await AbletonParser.parse('${project.path}/Dupes.als');
+
+    expect(r.midiTracks.map((t) => t.name), ['Winter - Piano', 'Winter - Piano']);
+    expect(r.midiTracks.map((t) => t.index), [0, 1]);
+    expect(r.midiTracks.map((t) => t.clipCount), [2, 1]);
   });
 }

@@ -5,15 +5,22 @@ import '../../models/midi_note.dart';
 
 class AbletonMidiTrack {
   final String name;
+
+  /// Zero-based position among the MIDI tracks; Live shows `index + 1`.
   final int index;
   final int noteCount;
   final List<MidiNote> notes;
+
+  /// How many clips sit on this track. Live lets several tracks share a name,
+  /// so the note count, clip count and time span are what tell them apart.
+  final int clipCount;
 
   const AbletonMidiTrack({
     required this.name,
     required this.index,
     required this.noteCount,
     required this.notes,
+    this.clipCount = 0,
   });
 }
 
@@ -197,6 +204,7 @@ class AbletonParser {
         index: i,
         noteCount: notes.length,
         notes: notes,
+        clipCount: _findAllElementsRecursive(trackElement, 'MidiClip').length,
       ));
     }
 

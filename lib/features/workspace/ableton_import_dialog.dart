@@ -152,13 +152,8 @@ class _AbletonImportDialogState extends State<AbletonImportDialog> {
                   _selectedTracks.remove(i);
                 }
               }),
-              title: Text(r.midiTracks[i].name),
-              subtitle: Text(() {
-                final track = r.midiTracks[i];
-                final dur = track.notes.isEmpty ? 0.0 :
-                    track.notes.fold<double>(0, (m, n) => n.endMs > m ? n.endMs : m);
-                return '${track.noteCount} notes • ${(dur / 1000).toStringAsFixed(1)}s';
-              }()),
+              title: Text('${i + 1} · ${r.midiTracks[i].name}'),
+              subtitle: Text(_trackSummary(r.midiTracks[i])),
               dense: true,
             ),
         ],
@@ -247,6 +242,32 @@ class _AbletonImportDialogState extends State<AbletonImportDialog> {
           dense: true,
         ),
     ];
+  }
+
+  /// Live happily lets several tracks share a name, so describe the content:
+  /// note count, clip count and the span the notes cover.
+  static String _trackSummary(AbletonMidiTrack track) {
+    if (track.notes.isEmpty) return 'empty';
+
+    var start = track.notes.first.startMs;
+    var end = 0.0;
+    for (final note in track.notes) {
+      if (note.startMs < start) start = note.startMs;
+      if (note.endMs > end) end = note.endMs;
+    }
+
+    return [
+      '${track.noteCount} notes',
+      if (track.clipCount > 0) '${track.clipCount} clips',
+      '${_timestamp(start)}–${_timestamp(end)}',
+    ].join(' • ');
+  }
+
+  static String _timestamp(double ms) {
+    final total = (ms / 1000).round();
+    final minutes = total ~/ 60;
+    final seconds = total % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   Widget _buildActions() {
