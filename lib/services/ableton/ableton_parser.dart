@@ -17,15 +17,35 @@ class AbletonMidiTrack {
   });
 }
 
+/// Where an audio file inside a Live project came from.
+///
+/// Live's `Samples/Imported` and `Samples/Processed` folders fill up with the
+/// individual note recordings that back a sampler instrument (for example
+/// `GrandPiano B6 ff.aif`). Those are never the track you want to play the
+/// overlay against, so they are kept apart from real recordings and bounces.
+enum AbletonAudioKind {
+  /// A bounce, render, or audio clip you recorded — the useful kind.
+  recording,
+
+  /// One note of a sampler instrument.
+  instrumentSample,
+}
+
 class AbletonAudioFile {
   final String path;
   final String name;
   final int sizeBytes;
+  final AbletonAudioKind kind;
+
+  /// Folder the file sits in, relative to the project, for disambiguation.
+  final String relativeDir;
 
   const AbletonAudioFile({
     required this.path,
     required this.name,
     required this.sizeBytes,
+    this.kind = AbletonAudioKind.recording,
+    this.relativeDir = '',
   });
 }
 
@@ -301,12 +321,41 @@ class AbletonParser {
           path: canonicalPath,
           name: canonicalPath.split(Platform.pathSeparator).last,
           sizeBytes: stat.size,
+          kind: _classify(projectDir.path, canonicalPath),
+          relativeDir: _relativeDir(projectDir.path, canonicalPath),
         ));
       }
     }
 
-    audioFiles.sort((a, b) => b.sizeBytes.compareTo(a.sizeBytes));
+    // Recordings first, then largest first: a bounce of the whole take is
+    // always bigger than a single sampled note.
+    audioFiles.sort((a, b) {
+      if (a.kind != b.kind) {
+        return a.kind == AbletonAudioKind.recording ? -1 : 1;
+      }
+      return b.sizeBytes.compareTo(a.sizeBytes);
+    });
     return audioFiles;
+  }
+
+  /// Folder holding [filePath], relative to [projectDirPath].
+  static String _relativeDir(String projectDirPath, String filePath) {
+    final sep = Platform.pathSeparator;
+    final dir = filePath.substring(0, filePath.lastIndexOf(sep));
+    if (dir == projectDirPath) return '';
+    if (!dir.startsWith('$projectDirPath$sep')) return dir;
+    return dir.substring(projectDirPath.length + 1);
+  }
+
+  static AbletonAudioKind _classify(String projectDirPath, String filePath) {
+    final rel = _relativeDir(projectDirPath, filePath)
+        .replaceAll('\\', '/')
+        .toLowerCase();
+    if (rel.startsWith('samples/imported') ||
+        rel.startsWith('samples/processed')) {
+      return AbletonAudioKind.instrumentSample;
+    }
+    return AbletonAudioKind.recording;
   }
 
   static String _fileExtension(String path) {

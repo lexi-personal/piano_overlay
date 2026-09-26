@@ -25,14 +25,14 @@ void main() {
 
   // A strip that deliberately spills past the left edge of the video, the way
   // a steep camera angle extrapolates the fall lane off frame.
-  final strip = NoteStripRenderData(
-    quad: const [
+  const strip = NoteStripRenderData(
+    quad: [
       Offset(-60, 10),
       Offset(160, 10),
       Offset(160, 90),
       Offset(-60, 90),
     ],
-    color: const Color(0xFFFF0000),
+    color: Color(0xFFFF0000),
   );
 
   test('without a clip rect the overlay paints over the whole canvas',
