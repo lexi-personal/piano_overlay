@@ -21,6 +21,10 @@ for style/export, the video with its live overlay in the centre, and a timeline 
 Calibration happens in place on the workspace video: the **Calibrate** tab puts you in a mode
 where you click the four keyboard corners directly on the frame and drag the handles to adjust.
 Corners are stored in video pixels, so the overlay keeps lining up when the window is resized.
+The calibration grid uses the same perspective mapping as the notes, so check its key
+boundaries against the video before applying. If notes look bunched together on an
+angled shot, try **Style → Timing → Projection → Upright** or shorten **Lookahead**;
+hide unrelated MIDI tracks in the expanded timeline if they add unwanted notes.
 If your keyboard runs off the edge of the recording, drag the **Frame zoom** slider down: the
 video shrinks inside the centre area so you can drop corners in the margin outside the frame.
 The overlay itself is always clipped to the video rectangle, matching what the export produces.

@@ -729,7 +729,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           child: FractionallySizedBox(
             widthFactor: zoom,
             heightFactor: zoom,
-            child: Video(controller: _videoController),
+            child: Video(
+              controller: _videoController,
+              subtitleViewConfiguration:
+                  const SubtitleViewConfiguration(visible: false),
+            ),
           ),
         ),
         Positioned.fill(

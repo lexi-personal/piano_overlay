@@ -451,6 +451,26 @@ void _angledLaneTests() {
         );
       });
     }
+
+    test('calibration grid projects to the same key as the note landing', () {
+      final corners = _angledCalibration().corners;
+      final homography = OverlayGeometry.computeHomographyPublic(52, [
+        corners.topLeft.toOffset(),
+        corners.topRight.toOffset(),
+        corners.bottomRight.toOffset(),
+        corners.bottomLeft.toOffset(),
+      ]);
+      final keyCentre = OverlayGeometry.projectPoint(homography, 23.5, 0);
+      final landing = _angledStrip(60).quad;
+
+      expect((landing[2].dx + landing[3].dx) / 2,
+          closeTo(keyCentre.dx, 0.5));
+      expect((landing[2].dy + landing[3].dy) / 2,
+          closeTo(keyCentre.dy, 0.5));
+      final linearX = corners.topLeft.x +
+          (corners.topRight.x - corners.topLeft.x) * 23.5 / 52;
+      expect((keyCentre.dx - linearX).abs(), greaterThan(100));
+    });
   });
 
   group('tabletop lane', () {

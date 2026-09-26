@@ -320,6 +320,11 @@ class OverlayGeometry {
     return _computeHomography(whiteKeys, screenCorners);
   }
 
+  /// Map a point in canonical keyboard coordinates into display coordinates.
+  static Offset projectPoint(List<List<double>> homography, double x, double y) {
+    return _transformPoint(homography, x, y);
+  }
+
   /// Solve the 8x8 linear system for a 3x3 homography matrix mapping
   /// the canonical rectangle (0,0)-(whiteKeys,1) to 4 screen corners.
   ///

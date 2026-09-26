@@ -133,20 +133,23 @@ class CalibrationOverlayPainter extends CustomPainter {
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
 
+    final homography = OverlayGeometry.computeHomographyPublic(
+      whiteKeys,
+      corners,
+    );
     for (int i = 0; i <= whiteKeys; i++) {
-      final t = i / whiteKeys;
       canvas.drawLine(
-        Offset.lerp(corners[0], corners[1], t)!,
-        Offset.lerp(corners[3], corners[2], t)!,
+        OverlayGeometry.projectPoint(homography, i.toDouble(), 0),
+        OverlayGeometry.projectPoint(homography, i.toDouble(), 1),
         gridPaint,
       );
     }
 
-    // The approximate black key / white key boundary.
     const blackKeyLine = 0.6;
     canvas.drawLine(
-      Offset.lerp(corners[0], corners[3], blackKeyLine)!,
-      Offset.lerp(corners[1], corners[2], blackKeyLine)!,
+      OverlayGeometry.projectPoint(homography, 0, blackKeyLine),
+      OverlayGeometry.projectPoint(
+          homography, whiteKeys.toDouble(), blackKeyLine),
       gridPaint,
     );
   }
