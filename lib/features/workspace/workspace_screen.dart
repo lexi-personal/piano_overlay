@@ -422,16 +422,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return null;
   }
 
-  /// The rectangle the video occupies inside [container] once letterboxing is
-  /// taken into account.
-  Rect _videoDisplayRect(Size container) {
+  /// The rectangle the video occupies inside [container] once letterboxing and
+  /// the calibration [zoom] are taken into account.
+  Rect _videoDisplayRect(Size container, [double zoom = 1.0]) {
+    final scaled = Size(container.width * zoom, container.height * zoom);
+    final dx = (container.width - scaled.width) / 2;
+    final dy = (container.height - scaled.height) / 2;
+
     final size = _videoFrameSize();
-    if (size == null) return Offset.zero & container;
-    return OverlayGeometry.fitVideoRect(
-      container: container,
+    if (size == null) return Rect.fromLTWH(dx, dy, scaled.width, scaled.height);
+
+    final fitted = OverlayGeometry.fitVideoRect(
+      container: scaled,
       videoWidth: size.width,
       videoHeight: size.height,
     );
+    return fitted.shift(Offset(dx, dy));
   }
 
   Widget _buildSyncPanel() {
@@ -687,14 +693,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
     }
 
+    final draft = _calibrationDraft;
+    final zoom = draft?.zoom ?? 1.0;
+
     return Stack(
       children: [
-        Center(child: Video(controller: _videoController)),
+        Center(
+          child: FractionallySizedBox(
+            widthFactor: zoom,
+            heightFactor: zoom,
+            child: Video(controller: _videoController),
+          ),
+        ),
         Positioned.fill(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final videoRect = _videoDisplayRect(constraints.biggest);
-              final draft = _calibrationDraft;
+              final videoRect = _videoDisplayRect(constraints.biggest, zoom);
               if (draft != null) {
                 return _buildCalibrationLayer(draft, videoRect);
               }
@@ -715,6 +729,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   ///
   /// Taps are converted from widget coordinates into video frame pixels, so a
   /// calibration stays valid no matter how the window is resized later.
+  /// Corners are deliberately not clamped to the frame: a keyboard that runs
+  /// off the edge of the recording needs corners outside it, which is what the
+  /// frame zoom control makes reachable.
   Widget _buildCalibrationLayer(CalibrationDraft draft, Rect videoRect) {
     Offset toVideo(Offset local) {
       final size = _videoFrameSize();
@@ -722,10 +739,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         return local;
       }
       return Offset(
-        ((local.dx - videoRect.left) / videoRect.width * size.width)
-            .clamp(0.0, size.width),
-        ((local.dy - videoRect.top) / videoRect.height * size.height)
-            .clamp(0.0, size.height),
+        (local.dx - videoRect.left) / videoRect.width * size.width,
+        (local.dy - videoRect.top) / videoRect.height * size.height,
       );
     }
 
@@ -747,7 +762,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             behavior: HitTestBehavior.opaque,
             onTapDown: (details) {
               if (draft.corners.length >= 4) return;
-              if (!videoRect.contains(details.localPosition)) return;
               setState(() => draft.corners.add(toVideo(details.localPosition)));
             },
             child: CustomPaint(
@@ -838,6 +852,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       backgroundDim: style.backgroundDim,
       fallLaneQuad: frameData.fallLaneQuad,
       laneOpacity: style.laneOpacity,
+      clipRect: videoRect,
     );
   }
 

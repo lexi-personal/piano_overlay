@@ -163,15 +163,30 @@ class _AbletonImportDialogState extends State<AbletonImportDialog> {
         ],
         if (r.audioFiles.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text('Audio Files', style: Theme.of(context).textTheme.titleSmall),
+          Text('Media source', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text(
+            'Optional. Picking an audio file here replaces the media loaded in '
+            'the workspace, so the overlay plays against that audio instead of '
+            'your video. Leave it on "Keep current video" to only import MIDI.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 8),
+          RadioListTile<int?>(
+            value: null,
+            groupValue: _selectedAudioIndex,
+            onChanged: (v) => setState(() => _selectedAudioIndex = v),
+            title: const Text('Keep current video'),
+            dense: true,
+          ),
           for (int i = 0; i < r.audioFiles.length; i++)
-            RadioListTile<int>(
+            RadioListTile<int?>(
               value: i,
               groupValue: _selectedAudioIndex,
               onChanged: (v) => setState(() => _selectedAudioIndex = v),
               title: Text(r.audioFiles[i].name),
-              subtitle: Text(_formatSize(r.audioFiles[i].sizeBytes)),
+              subtitle: Text(
+                  'Replace video • ${_formatSize(r.audioFiles[i].sizeBytes)}'),
               dense: true,
             ),
         ],

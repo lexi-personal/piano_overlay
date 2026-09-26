@@ -22,6 +22,15 @@ class CalibrationDraft {
   int highestNote = 108;
   bool showGrid = true;
 
+  /// How much of the centre area the video is shrunk into while calibrating.
+  ///
+  /// Anything below 1.0 leaves a margin around the frame so corners of a
+  /// keyboard that runs off the edge of the recording can still be placed.
+  double zoom = 1.0;
+
+  static const double minZoom = 0.35;
+  static const double maxZoom = 1.0;
+
   CalibrationDraft();
 
   /// Start from an existing calibration so "Recalibrate" keeps the old corners
@@ -234,6 +243,28 @@ class CalibrationEditorPanel extends StatelessWidget {
           '${KeyRange.noteName(range.highestNote)} '
           '(${range.whiteKeys} white keys)',
           style: const TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Expanded(child: Text('Frame zoom')),
+            Text('${(draft.zoom * 100).round()}%',
+                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        Slider(
+          value: draft.zoom,
+          min: CalibrationDraft.minZoom,
+          max: CalibrationDraft.maxZoom,
+          onChanged: (v) {
+            draft.zoom = v;
+            onChanged();
+          },
+        ),
+        const Text(
+          'Zoom out to place corners of a keyboard that extends past the edge '
+          'of the recording.',
+          style: TextStyle(fontSize: 11, color: Colors.grey),
         ),
         const SizedBox(height: 12),
         SwitchListTile(

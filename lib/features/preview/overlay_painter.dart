@@ -14,21 +14,35 @@ class OverlayPainter extends CustomPainter {
   final List<Offset>? fallLaneQuad;
   final double laneOpacity;
 
+  /// Area the video occupies. Nothing is drawn outside it, matching the
+  /// export, where the overlay can only land on the video frame itself.
+  final Rect? clipRect;
+
   OverlayPainter({
     required this.strips,
     required this.keyHighlights,
     this.backgroundDim = 0.0,
     this.fallLaneQuad,
     this.laneOpacity = 0.55,
+    this.clipRect,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (clipRect != null) {
+      canvas.save();
+      canvas.clipRect(clipRect!);
+    }
+    _paintContents(canvas, clipRect ?? (Offset.zero & size));
+    if (clipRect != null) canvas.restore();
+  }
+
+  void _paintContents(Canvas canvas, Rect bounds) {
     // Apply background dimming
     if (backgroundDim > 0.0) {
       final dimPaint = Paint()
         ..color = Colors.black.withOpacity(backgroundDim);
-      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), dimPaint);
+      canvas.drawRect(bounds, dimPaint);
     }
 
     // Draw the fall-lane background
