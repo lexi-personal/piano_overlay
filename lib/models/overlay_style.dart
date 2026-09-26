@@ -15,6 +15,7 @@ class OverlayStyle {
   final bool showDuringPlay;
   final double fallSpeed;
   final FallDirection fallDirection;
+  final LaneProjection laneProjection;
   final bool keyHighlightEnabled;
   final Color keyHighlightColor;
   final double backgroundDim;
@@ -44,6 +45,7 @@ class OverlayStyle {
     this.showDuringPlay = true,
     this.fallSpeed = 200.0,
     this.fallDirection = FallDirection.topToBottom,
+    this.laneProjection = LaneProjection.tabletop,
     this.keyHighlightEnabled = true,
     this.keyHighlightColor = const Color(0x40FFFFFF),
     this.backgroundDim = 0.0,
@@ -68,6 +70,7 @@ class OverlayStyle {
     bool? showDuringPlay,
     double? fallSpeed,
     FallDirection? fallDirection,
+    LaneProjection? laneProjection,
     bool? keyHighlightEnabled,
     Color? keyHighlightColor,
     double? backgroundDim,
@@ -91,6 +94,7 @@ class OverlayStyle {
       showDuringPlay: showDuringPlay ?? this.showDuringPlay,
       fallSpeed: fallSpeed ?? this.fallSpeed,
       fallDirection: fallDirection ?? this.fallDirection,
+      laneProjection: laneProjection ?? this.laneProjection,
       keyHighlightEnabled: keyHighlightEnabled ?? this.keyHighlightEnabled,
       keyHighlightColor: keyHighlightColor ?? this.keyHighlightColor,
       backgroundDim: backgroundDim ?? this.backgroundDim,
@@ -116,6 +120,7 @@ class OverlayStyle {
         'show_during_play': showDuringPlay,
         'fall_speed': fallSpeed,
         'fall_direction': fallDirection.name,
+        'lane_projection': laneProjection.name,
         'key_highlight_enabled': keyHighlightEnabled,
         'key_highlight_color': _colorToHex(keyHighlightColor),
         'background_dim': backgroundDim,
@@ -143,6 +148,8 @@ class OverlayStyle {
         'fall_speed': fallSpeed,
         'fall_direction':
             fallDirection == FallDirection.bottomToTop ? 'BottomToTop' : 'TopToBottom',
+        'lane_projection':
+            laneProjection == LaneProjection.upright ? 'Upright' : 'Tabletop',
         'key_highlight_enabled': keyHighlightEnabled,
         'key_highlight_color': _colorToRgba(keyHighlightColor),
         'background_dim': backgroundDim,
@@ -162,6 +169,17 @@ class OverlayStyle {
 enum FallDirection {
   topToBottom,
   bottomToTop,
+}
+
+/// How the fall lane is projected into the video.
+enum LaneProjection {
+  /// Notes recede along the keyboard plane, as if painted on the surface
+  /// behind the keys. Keeps the camera's perspective.
+  tabletop,
+
+  /// Notes rise straight up the screen, as if on a wall standing behind the
+  /// keys. Ignores the camera angle, but never foreshortens or runs off-frame.
+  upright,
 }
 
 /// Sync settings for MIDI-to-video alignment.

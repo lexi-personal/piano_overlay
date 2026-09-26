@@ -638,6 +638,33 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             ],
           ),
         ),
+        ListTile(
+          dense: true,
+          title: const Text('Projection', style: TextStyle(fontSize: 13)),
+          subtitle: Text(
+            style.laneProjection == LaneProjection.tabletop
+                ? 'Notes recede along the keyboard, following the camera angle'
+                : 'Notes rise straight up the screen, ignoring the camera angle',
+            style: const TextStyle(fontSize: 11),
+          ),
+          trailing: DropdownButton<LaneProjection>(
+            value: style.laneProjection,
+            underline: const SizedBox.shrink(),
+            onChanged: (v) => v == null
+                ? null
+                : widget.provider.updateStyle(style.copyWith(laneProjection: v)),
+            items: const [
+              DropdownMenuItem(
+                value: LaneProjection.tabletop,
+                child: Text('In perspective', style: TextStyle(fontSize: 13)),
+              ),
+              DropdownMenuItem(
+                value: LaneProjection.upright,
+                child: Text('Upright', style: TextStyle(fontSize: 13)),
+              ),
+            ],
+          ),
+        ),
         SwitchListTile(
           title: const Text('Show notes before they play'),
           value: style.showBeforePlay,

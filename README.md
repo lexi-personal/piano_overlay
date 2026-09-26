@@ -8,6 +8,7 @@ A Flutter desktop application that creates visual overlays of piano key presses 
 - **Calibrate** keyboard position by placing 4 corners directly on the workspace video (49/61/76/88 keys, or a custom range)
 - **Sync** MIDI playback offset with video audio (±60s slider, ±10/±100 ms nudges, manual entry)
 - **Style** per-hand or per-key-type colors, glow, transparency, lane opacity, fall speed, lookahead,
+  lane projection (in perspective or upright),
   fall direction, key highlighting, background dim, and rounded or outlined note strips
 - **Edit** per-track visibility, hand assignment, nudge and trim in the multi-track timeline
 - **Preview** real-time overlay visualization with video playback, toggleable overlay
@@ -59,22 +60,26 @@ Rust Core (Business Logic)
 ### How note strips are placed
 
 The calibration gives a homography mapping a canonical keyboard rectangle onto the four corners
-you placed in the video. Each note strip is anchored to **its own key**: the left and right edges
-of the strip come from that key's boundaries on the keyboard edge, so a strip always lands on the
-key it belongs to.
+you placed in the video. **Every strip corner goes through that homography**, so a strip always
+sits exactly where its key sits.
 
-From there the strip rises straight up the screen (or drops straight down, with a bottom-to-top
-fall direction) — an upright wall standing behind the keys, not a road receding along the tabletop.
-Each end's height is scaled by the keyboard's own depth at that point, so the near side of the
-keyboard gets a taller lane than the far side and perspective still reads correctly.
+This matters more than it sounds. Under perspective, key spacing is not uniform on screen: keys
+compress toward the far end of an angled keyboard. Positioning notes by interpolating linearly
+along the keyboard edge instead drags them off target by up to two octaves in the middle of the
+keyboard, while still looking correct at the two ends.
 
-This matters on angled shots. Extending the lane *along the keyboard plane* degenerates as the
-plane runs toward the horizon: the lane slides sideways instead of rising, and past a certain
-angle it crosses the horizon and inverts, producing a twisted, self-intersecting quad. The upright
-lane is measured entirely inside the calibrated quad and can do neither.
+**Projection** (Style -> Timing) chooses where the strips travel:
 
-It is not a full 3D reconstruction, though: at extreme angles the projected keys can still overlap
-or occlude one another.
+- **In perspective** (default) - notes recede along the keyboard plane, as if painted on the
+  surface behind the keys. Keeps the camera's perspective and stays readable at steep angles. The
+  lane is clamped so it stops short of the horizon on shots that look along the keyboard plane.
+- **Upright** - notes rise straight up the screen, as if on a wall standing behind the keys. The
+  rise at each end is scaled by the keyboard's depth there, so the near side gets a taller lane.
+  Ignores the camera angle entirely, but on a near edge-on shot the keyboard's horizontal screen
+  extent is small, so the lane is narrow and notes bunch together. Best on head-on shots.
+
+Neither is a full 3D reconstruction: at extreme angles projected keys can overlap or occlude one
+another.
 
 The same geometry is implemented twice — `lib/shared/overlay_geometry.dart` for the live preview
 and `native/src/overlay_geometry/engine.rs` for the export — and the two **must** stay in sync, or

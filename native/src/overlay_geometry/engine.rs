@@ -1,5 +1,6 @@
 use super::types::{
-    FallDirection, KeyHighlight, NoteStrip, OverlayFrame, OverlayStyle, SyncSettings,
+    FallDirection, KeyHighlight, LaneProjection, NoteStrip, OverlayFrame, OverlayStyle,
+    SyncSettings,
 };
 use crate::calibration::Point2D;
 use crate::calibration::{is_black_key, transform_point, CalibrationData};
@@ -41,24 +42,36 @@ impl OverlayEngine {
         let white_keys = key_range.white_keys as f64;
         let h = &calibration.homography;
 
-        // Top-to-bottom stands the lane on the keyboard's far edge (y = 0) and
-        // rises up the screen; bottom-to-top stands it on the near edge (y = 1)
-        // and drops down the screen.
-        let (anchor_y, rise_sign) = match style.fall_direction {
+        // Top-to-bottom anchors the lane on the keyboard's far edge (y = 0);
+        // bottom-to-top anchors it on the near edge (y = 1).
+        let (anchor_y, lane_dir) = match style.fall_direction {
             FallDirection::BottomToTop => (1.0, 1.0),
             _ => (0.0, -1.0),
         };
+        let tabletop = matches!(style.lane_projection, LaneProjection::Tabletop);
         let kb_left = transform_point(h, &Point2D::new(0.0, anchor_y));
         let kb_right = transform_point(h, &Point2D::new(white_keys, anchor_y));
 
-        let lane_top_left = Point2D::new(
-            kb_left.x,
-            kb_left.y + rise_sign * lane_height_at(h, 0.0, white_keys),
-        );
-        let lane_top_right = Point2D::new(
-            kb_right.x,
-            kb_right.y + rise_sign * lane_height_at(h, white_keys, white_keys),
-        );
+        let lane_extent = if tabletop {
+            safe_lane_extent(h, anchor_y, lane_dir, white_keys)
+        } else {
+            Self::CANONICAL_LANE_HEIGHT
+        };
+
+        let lane = |u: f64, t: f64| -> Point2D {
+            if tabletop {
+                transform_point(h, &Point2D::new(u, anchor_y + lane_dir * lane_extent * t))
+            } else {
+                let base = transform_point(h, &Point2D::new(u, anchor_y));
+                Point2D::new(
+                    base.x,
+                    base.y + lane_dir * lane_height_at(h, u, white_keys) * t,
+                )
+            }
+        };
+
+        let lane_top_left = lane(0.0, 1.0);
+        let lane_top_right = lane(white_keys, 1.0);
 
         let lookahead = style.lookahead_ms.max(1e-6);
 
@@ -102,18 +115,10 @@ impl OverlayEngine {
             let u_left = key_x - half_width;
             let u_right = key_x + half_width;
 
-            // Anchor the strip to its own key: the landing edge comes straight
-            // from that key's calibrated boundaries, and the strip rises
-            // vertically from there.
-            let base_left = transform_point(h, &Point2D::new(u_left, anchor_y));
-            let base_right = transform_point(h, &Point2D::new(u_right, anchor_y));
-            let height_left = lane_height_at(h, u_left, white_keys);
-            let height_right = lane_height_at(h, u_right, white_keys);
-
-            let bottom_left = lane_point(&base_left, height_left, rise_sign, t_bottom);
-            let bottom_right = lane_point(&base_right, height_right, rise_sign, t_bottom);
-            let top_right = lane_point(&base_right, height_right, rise_sign, t_top);
-            let top_left = lane_point(&base_left, height_left, rise_sign, t_top);
+            let bottom_left = lane(u_left, t_bottom);
+            let bottom_right = lane(u_right, t_bottom);
+            let top_right = lane(u_right, t_top);
+            let top_left = lane(u_left, t_top);
 
             let mut color = if style.use_hand_colors {
                 if note.track == 0 {
@@ -165,13 +170,34 @@ impl OverlayEngine {
     }
 }
 
-/// A point on the upright lane: `base` is the landing edge, and the lane rises
-/// `rise_sign * height` pixels away from it over the full lookahead.
-fn lane_point(base: &Point2D, height: f64, rise_sign: f64, t: f64) -> Point2D {
-    Point2D::new(base.x, base.y + rise_sign * height * t)
+/// How far the tabletop lane may travel along the keyboard plane, in keyboard
+/// depths, before it reaches the horizon.
+///
+/// A point is in front of the camera while the homography's third row stays
+/// positive. That row is linear in the canonical coordinates, so the crossing
+/// point is exact: `w(t) = w0 + dw * t`. On most shots the lane runs *away*
+/// from the horizon and nothing is clamped; on shots looking along the keyboard
+/// plane this stops the lane just short of turning inside out.
+fn safe_lane_extent(h: &[[f64; 3]; 3], anchor_y: f64, lane_dir: f64, white_keys: f64) -> f64 {
+    let mut extent = OverlayEngine::CANONICAL_LANE_HEIGHT;
+    let dw = h[2][1] * lane_dir;
+    if dw >= 0.0 {
+        return extent;
+    }
+    for u in [0.0, white_keys] {
+        let w0 = h[2][0] * u + h[2][1] * anchor_y + h[2][2];
+        if w0 <= 0.0 {
+            continue;
+        }
+        let limit = 0.9 * w0 / -dw;
+        if limit < extent {
+            extent = limit;
+        }
+    }
+    extent.max(0.0)
 }
 
-/// On-screen height of the lane above the key at canonical x `u`, in pixels.
+/// On-screen height of the upright lane above the key at canonical x `u`, in pixels.
 ///
 /// The keyboard's own depth at that x is the perspective cue: a wall of constant
 /// world height looks taller where it is nearer the camera. `u` is clamped into
@@ -271,35 +297,44 @@ mod tests {
             .expect("angled calibration should succeed")
     }
 
+    fn angled_note(pitch: u8) -> Vec<MidiNote> {
+        vec![MidiNote {
+            pitch,
+            velocity: 100,
+            start_ms: 0.0,
+            duration_ms: 2000.0,
+            channel: 0,
+            track: 0,
+        }]
+    }
+
+    fn upright_style() -> OverlayStyle {
+        OverlayStyle {
+            lane_projection: LaneProjection::Upright,
+            ..OverlayStyle::default()
+        }
+    }
+
+    /// Middle C is the 24th white key up from A0, so its centre is at canonical
+    /// x 23.5. Through the homography that is x = 1099 in the video.
+    /// Interpolating linearly along the keyboard edge instead puts it at
+    /// x = 945 -- 18 white keys, over two octaves, too far left.
     #[test]
-    fn test_angled_shot_strips_rise_without_sliding_sideways() {
+    fn test_angled_shot_places_middle_c_through_the_homography() {
         let cal = make_angled_calibration();
-        let style = OverlayStyle::default();
         let sync = SyncSettings::default();
 
-        for pitch in [21u8, 48, 72, 108] {
-            let notes = vec![MidiNote {
-                pitch,
-                velocity: 100,
-                start_ms: 0.0,
-                duration_ms: 2000.0,
-                channel: 0,
-                track: 0,
-            }];
-            let frame = OverlayEngine::compute_frame(0.0, &notes, &cal, &style, &sync);
-            assert_eq!(frame.strips.len(), 1, "pitch {pitch} should render");
-
-            // quad is [top_left, top_right, bottom_right, bottom_left]
-            let top_left = frame.strips[0].quad[0];
-            let bottom_left = frame.strips[0].quad[3];
-
+        for style in [OverlayStyle::default(), upright_style()] {
+            let frame = OverlayEngine::compute_frame(0.0, &angled_note(60), &cal, &style, &sync);
+            let quad = frame.strips[0].quad;
+            let landing = (quad[2].x + quad[3].x) / 2.0;
             assert!(
-                (top_left.x - bottom_left.x).abs() < 1e-6,
-                "pitch {pitch} drifted sideways along the lane"
+                (landing - 1098.96).abs() < 0.5,
+                "middle C landed at {landing}, expected 1098.96"
             );
             assert!(
-                top_left.y < bottom_left.y,
-                "pitch {pitch} should rise up the screen"
+                (landing - 944.86).abs() > 100.0,
+                "notes are being placed by linear interpolation again"
             );
         }
     }
@@ -307,38 +342,78 @@ mod tests {
     #[test]
     fn test_angled_shot_notes_land_left_to_right_on_their_own_keys() {
         let cal = make_angled_calibration();
-        let style = OverlayStyle::default();
         let sync = SyncSettings::default();
 
-        let mut previous = f64::NEG_INFINITY;
-        for pitch in 21u8..=108 {
-            let notes = vec![MidiNote {
-                pitch,
-                velocity: 100,
-                start_ms: 0.0,
-                duration_ms: 2000.0,
-                channel: 0,
-                track: 0,
-            }];
-            let frame = OverlayEngine::compute_frame(0.0, &notes, &cal, &style, &sync);
-            let quad = frame.strips[0].quad;
-            let landing = (quad[2].x + quad[3].x) / 2.0;
-            assert!(
-                landing > previous,
-                "pitch {pitch} landed left of the note below it"
-            );
-            previous = landing;
+        for style in [OverlayStyle::default(), upright_style()] {
+            let mut previous = f64::NEG_INFINITY;
+            for pitch in 21u8..=108 {
+                let frame =
+                    OverlayEngine::compute_frame(0.0, &angled_note(pitch), &cal, &style, &sync);
+                let quad = frame.strips[0].quad;
+                let landing = (quad[2].x + quad[3].x) / 2.0;
+                assert!(
+                    landing > previous,
+                    "pitch {pitch} landed left of the note below it"
+                );
+                previous = landing;
+            }
         }
     }
 
     #[test]
-    fn test_angled_shot_lane_stays_inside_the_frame() {
+    fn test_tabletop_lane_keeps_the_camera_perspective() {
+        let cal = make_angled_calibration();
+        let style = OverlayStyle::default();
+        let sync = SyncSettings::default();
+        let frame = OverlayEngine::compute_frame(0.0, &angled_note(21), &cal, &style, &sync);
+        let quad = frame.strips[0].quad;
+        assert!(
+            (quad[0].x - quad[3].x).abs() > 50.0,
+            "the tabletop lane should recede along the keyboard plane"
+        );
+    }
+
+    #[test]
+    fn test_tabletop_lane_stays_in_front_of_the_camera() {
         let cal = make_angled_calibration();
         let style = OverlayStyle::default();
         let sync = SyncSettings::default();
         let frame = OverlayEngine::compute_frame(0.0, &[], &cal, &style, &sync);
-        let lane = frame.fall_lane_quad.expect("lane quad");
-        for p in lane {
+        for p in frame.fall_lane_quad.expect("lane quad") {
+            assert!(
+                p.x.is_finite() && p.y.is_finite(),
+                "lane corner is not finite"
+            );
+        }
+    }
+
+    #[test]
+    fn test_upright_shot_strips_rise_without_sliding_sideways() {
+        let cal = make_angled_calibration();
+        let style = upright_style();
+        let sync = SyncSettings::default();
+
+        for pitch in [21u8, 48, 72, 108] {
+            let frame = OverlayEngine::compute_frame(0.0, &angled_note(pitch), &cal, &style, &sync);
+            let quad = frame.strips[0].quad;
+            assert!(
+                (quad[0].x - quad[3].x).abs() < 1e-6,
+                "pitch {pitch} drifted sideways along the lane"
+            );
+            assert!(
+                quad[0].y < quad[3].y,
+                "pitch {pitch} should rise up the screen"
+            );
+        }
+    }
+
+    #[test]
+    fn test_upright_lane_stays_inside_the_frame() {
+        let cal = make_angled_calibration();
+        let style = upright_style();
+        let sync = SyncSettings::default();
+        let frame = OverlayEngine::compute_frame(0.0, &[], &cal, &style, &sync);
+        for p in frame.fall_lane_quad.expect("lane quad") {
             assert!(
                 (0.0..=1920.0).contains(&p.x),
                 "lane corner left the frame sideways: {}",

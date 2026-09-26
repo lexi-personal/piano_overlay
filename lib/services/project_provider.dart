@@ -281,6 +281,9 @@ class ProjectProvider extends ChangeNotifier {
       fallDirection: json['fall_direction'] == 'bottomToTop'
           ? FallDirection.bottomToTop
           : FallDirection.topToBottom,
+      laneProjection: json['lane_projection'] == 'upright'
+          ? LaneProjection.upright
+          : LaneProjection.tabletop,
       backgroundDim: (json['background_dim'] as num?)?.toDouble() ?? 0.0,
       cornerRadius: (json['corner_radius'] as num?)?.toDouble() ?? 0.0,
       borderWidth: (json['border_width'] as num?)?.toDouble() ?? 0.0,
