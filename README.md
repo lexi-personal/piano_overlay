@@ -78,6 +78,19 @@ WSL, the helper is often missing and importing will report that it needs install
 sudo apt install zenity   # or: sudo dnf install zenity
 ```
 
+### Running under WSL
+
+WSLg routes OpenGL through a Direct3D 12 translation layer, and Flutter's compositor deadlocks
+against it: the window stops repainting and the app looks frozen even though nothing in it is
+actually blocked. The app detects WSL at startup and falls back to Mesa's software rasteriser,
+which avoids that driver. Video decoding is kept off the GPU for the same reason.
+
+If you are on WSL with a working GPU stack and want to try the hardware path:
+
+```bash
+PIANO_OVERLAY_GPU=1 PIANO_OVERLAY_VIDEO_HWACCEL=1 ./piano_overlay
+```
+
 ## Building
 
 ### 1. Build the Rust native library
