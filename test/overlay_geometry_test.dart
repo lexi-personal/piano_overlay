@@ -283,13 +283,27 @@ void main() {
       cornerRadius: 0.3,
       borderWidth: 0.05,
       fallDirection: FallDirection.bottomToTop,
+      laneProjection: LaneProjection.upright,
     ).toNativeJson();
 
     expect(json['corner_radius'], 0.3);
     expect(json['border_width'], 0.05);
     expect(json['fall_direction'], 'BottomToTop');
+    expect(json['lane_projection'], 'Upright');
     expect(json['border_color'], isA<List<double>>());
     expect(json['key_highlight_color'], isA<List<double>>());
+  });
+
+  test('the lane projection survives a project round trip', () {
+    for (final projection in LaneProjection.values) {
+      final saved = OverlayStyle(laneProjection: projection).toJson();
+      expect(saved['lane_projection'], projection.name);
+    }
+    // Projects saved before the setting existed keep the perspective look.
+    expect(
+      const OverlayStyle().toJson()['lane_projection'],
+      LaneProjection.tabletop.name,
+    );
   });
 
   group('key placement', () {
@@ -365,7 +379,7 @@ CalibrationData _angledCalibration() => const CalibrationData(
       calibrationHeight: 1080,
     );
 
-NoteStripRenderData _angledStrip(int pitch) {
+NoteStripRenderData _angledStrip(int pitch, {OverlayStyle? style}) {
   final frame = OverlayGeometry.computeFrame(
     timestampMs: 0,
     notes: [
@@ -379,7 +393,7 @@ NoteStripRenderData _angledStrip(int pitch) {
       ),
     ],
     calibration: _angledCalibration(),
-    style: const OverlayStyle(),
+    style: style ?? const OverlayStyle(),
     sync: const SyncSettings(),
     displayWidth: 1920,
     displayHeight: 1080,
@@ -387,56 +401,96 @@ NoteStripRenderData _angledStrip(int pitch) {
   return frame.strips.single;
 }
 
+OverlayFrameData _angledFrame(OverlayStyle style) => OverlayGeometry.computeFrame(
+      timestampMs: 0,
+      notes: const [],
+      calibration: _angledCalibration(),
+      style: style,
+      sync: const SyncSettings(),
+      displayWidth: 1920,
+      displayHeight: 1080,
+    );
+
+const _upright = OverlayStyle(laneProjection: LaneProjection.upright);
+
 void _angledLaneTests() {
-  group('upright fall lane', () {
+  group('note placement on an angled shot', () {
+    // Placing notes by interpolating linearly along the keyboard edge drags
+    // them up to 20 white keys (three octaves) off target, worst in the middle
+    // of the keyboard. Every strip must come from the homography instead.
+    for (final projection in LaneProjection.values) {
+      final style = OverlayStyle(laneProjection: projection);
+
+      test('${projection.name}: notes land strictly left to right', () {
+        var previous = double.negativeInfinity;
+        for (var pitch = 21; pitch <= 108; pitch++) {
+          final quad = _angledStrip(pitch, style: style).quad;
+          final x = (quad[2].dx + quad[3].dx) / 2;
+          expect(
+            x,
+            greaterThan(previous),
+            reason: 'pitch $pitch landed left of the note below it',
+          );
+          previous = x;
+        }
+      });
+
+      test('${projection.name}: the landing edge sits on the calibrated key',
+          () {
+        // Middle C is the 24th white key up from A0, so its centre is at
+        // canonical x 23.5. Through the homography that is x = 1099 in the
+        // video. Interpolating linearly along the keyboard edge instead puts
+        // it at x = 945 -- 18 white keys, over two octaves, too far left.
+        final quad = _angledStrip(60, style: style).quad;
+        final landing = (quad[2].dx + quad[3].dx) / 2;
+        expect(landing, closeTo(1098.96, 0.5));
+        expect(
+          (landing - 944.86).abs(),
+          greaterThan(100),
+          reason: 'notes are being placed by linear interpolation again',
+        );
+      });
+    }
+  });
+
+  group('tabletop lane', () {
+    test('keeps the camera perspective instead of rising vertically', () {
+      final quad = _angledStrip(21).quad;
+      expect(
+        (quad[0].dx - quad[3].dx).abs(),
+        greaterThan(50),
+        reason: 'the tabletop lane should recede along the keyboard plane',
+      );
+    });
+
+    test('stays in front of the camera all the way along the lane', () {
+      final lane = _angledFrame(const OverlayStyle()).fallLaneQuad!;
+      for (final p in lane) {
+        expect(p.dx.isFinite, isTrue);
+        expect(p.dy.isFinite, isTrue);
+      }
+    });
+  });
+
+  group('upright lane', () {
     test('strips rise vertically instead of sliding sideways', () {
       for (final pitch in [21, 48, 72, 108]) {
-        final quad = _angledStrip(pitch).quad; // topLeft, topRight, BR, BL
-        final topLeft = quad[0];
-        final bottomLeft = quad[3];
-
+        final quad = _angledStrip(pitch, style: _upright).quad;
         expect(
-          topLeft.dx,
-          closeTo(bottomLeft.dx, 0.001),
+          quad[0].dx,
+          closeTo(quad[3].dx, 0.001),
           reason: 'pitch $pitch drifted sideways along the lane',
         );
         expect(
-          topLeft.dy,
-          lessThan(bottomLeft.dy),
+          quad[0].dy,
+          lessThan(quad[3].dy),
           reason: 'pitch $pitch should rise up the screen',
         );
       }
     });
 
-    test('every strip lands on its own key, left to right', () {
-      double landingX(int pitch) {
-        final quad = _angledStrip(pitch).quad;
-        return (quad[2].dx + quad[3].dx) / 2;
-      }
-
-      var previous = double.negativeInfinity;
-      for (var pitch = 21; pitch <= 108; pitch++) {
-        final x = landingX(pitch);
-        expect(
-          x,
-          greaterThan(previous),
-          reason: 'pitch $pitch landed left of the note below it',
-        );
-        previous = x;
-      }
-    });
-
     test('the lane never leaves the frame sideways', () {
-      final frame = OverlayGeometry.computeFrame(
-        timestampMs: 0,
-        notes: const [],
-        calibration: _angledCalibration(),
-        style: const OverlayStyle(),
-        sync: const SyncSettings(),
-        displayWidth: 1920,
-        displayHeight: 1080,
-      );
-      final lane = frame.fallLaneQuad!;
+      final lane = _angledFrame(_upright).fallLaneQuad!;
       for (final p in lane) {
         expect(p.dx, greaterThanOrEqualTo(0));
         expect(p.dx, lessThanOrEqualTo(1920));
@@ -444,19 +498,9 @@ void _angledLaneTests() {
     });
 
     test('the lane is taller on the near side than the far side', () {
-      final frame = OverlayGeometry.computeFrame(
-        timestampMs: 0,
-        notes: const [],
-        calibration: _angledCalibration(),
-        style: const OverlayStyle(),
-        sync: const SyncSettings(),
-        displayWidth: 1920,
-        displayHeight: 1080,
-      );
-      final lane = frame.fallLaneQuad!; // kbLeft, kbRight, topRight, topLeft
-      final leftHeight = (lane[0].dy - lane[3].dy).abs();
-      final rightHeight = (lane[1].dy - lane[2].dy).abs();
-      expect(leftHeight, greaterThan(rightHeight));
+      final lane = _angledFrame(_upright).fallLaneQuad!;
+      expect((lane[0].dy - lane[3].dy).abs(),
+          greaterThan((lane[1].dy - lane[2].dy).abs()));
     });
   });
 }

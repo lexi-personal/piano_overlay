@@ -27,6 +27,9 @@ pub struct OverlayStyle {
     pub fall_speed: f32,
     /// Fall direction.
     pub fall_direction: FallDirection,
+    /// How the fall lane is projected into the video.
+    #[serde(default)]
+    pub lane_projection: LaneProjection,
     /// Whether to highlight keys when they are being pressed.
     pub key_highlight_enabled: bool,
     /// Key highlight color (RGBA).
@@ -86,6 +89,7 @@ impl Default for OverlayStyle {
             show_during_play: true,
             fall_speed: 200.0,
             fall_direction: FallDirection::TopToBottom,
+            lane_projection: LaneProjection::default(),
             key_highlight_enabled: true,
             key_highlight_color: [1.0, 1.0, 1.0, 0.25],
             background_dim: 0.0,
@@ -98,6 +102,18 @@ impl Default for OverlayStyle {
             border_color: default_border_color(),
         }
     }
+}
+
+/// How the fall lane is projected into the video.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LaneProjection {
+    /// Notes recede along the keyboard plane, as if painted on the surface
+    /// behind the keys. Keeps the camera's perspective.
+    #[default]
+    Tabletop,
+    /// Notes rise straight up the screen, as if on a wall standing behind the
+    /// keys. Ignores the camera angle, but never foreshortens or runs off-frame.
+    Upright,
 }
 
 /// Direction note strips flow from.

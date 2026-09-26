@@ -57,37 +57,40 @@ class OverlayGeometry {
       displayOffsetY,
     );
 
-    // --- Build the fall lane as an upright, screen-space wall ---
-    // Notes travel straight up/down the screen rather than receding along the
-    // keyboard plane. Extrapolating the homography past the keyboard degenerates
-    // on angled shots -- the plane runs to the horizon, so the lane slides
-    // sideways and eventually inverts. An upright wall cannot do either.
-    //
-    // Top-to-bottom stands the wall on the keyboard's far edge (y = 0) and
-    // rises up the screen; bottom-to-top stands it on the near edge (y = 1)
-    // and drops down the screen.
+    // --- Build the fall lane ---
+    // Top-to-bottom anchors the lane on the keyboard's far edge (y = 0);
+    // bottom-to-top anchors it on the near edge (y = 1).
     final anchorY = style.fallDirection == FallDirection.bottomToTop ? 1.0 : 0.0;
-    final riseSign = style.fallDirection == FallDirection.bottomToTop ? 1.0 : -1.0;
+    final laneDir = style.fallDirection == FallDirection.bottomToTop ? 1.0 : -1.0;
+    final tabletop = style.laneProjection == LaneProjection.tabletop;
 
     // Keyboard edge via homography (within calibrated region, safe).
     final kbLeft = _transformPoint(h, 0.0, anchorY);
     final kbRight = _transformPoint(h, whiteKeys.toDouble(), anchorY);
 
-    // A wall of constant height in the world looks taller where it is nearer
-    // the camera. The keyboard's own depth at a given x is the perspective cue
-    // for that, and it is measured entirely inside the calibrated quad, so it
-    // can never blow up the way an extrapolation can.
-    final laneHeightLeft = _laneHeightAt(h, 0.0);
-    final laneHeightRight = _laneHeightAt(h, whiteKeys.toDouble());
+    // Tabletop: how far the lane may run along the keyboard plane before it
+    // reaches the horizon. Upright: the on-screen height of the wall at each
+    // end, which needs no such limit.
+    final laneExtent = tabletop
+        ? _safeLaneExtent(h, anchorY, laneDir, whiteKeys.toDouble())
+        : _canonicalStripHeight;
 
-    final laneTopLeft = Offset(
-      kbLeft.dx,
-      kbLeft.dy + riseSign * laneHeightLeft,
-    );
-    final laneTopRight = Offset(
-      kbRight.dx,
-      kbRight.dy + riseSign * laneHeightRight,
-    );
+    Offset lanePointAt(double u, double t) {
+      if (tabletop) {
+        return _transformPoint(h, u, anchorY + laneDir * laneExtent * t);
+      }
+      // Upright: straight up the screen from the key it lands on. Note that on
+      // a near edge-on shot the keyboard's horizontal screen extent is small,
+      // so the lane is correspondingly narrow -- that is the trade for ignoring
+      // the camera angle, and the tabletop projection is the readable choice
+      // there.
+      final base = _transformPoint(h, u, anchorY);
+      final height = _laneHeightAt(h, u, whiteKeys.toDouble());
+      return Offset(base.dx, base.dy + laneDir * height * t);
+    }
+
+    final laneTopLeft = lanePointAt(0.0, 1.0);
+    final laneTopRight = lanePointAt(whiteKeys.toDouble(), 1.0);
 
     final fallLaneQuad = [kbLeft, kbRight, laneTopRight, laneTopLeft];
 
@@ -120,19 +123,14 @@ class OverlayGeometry {
       final uLeft = keyX - halfWidth;
       final uRight = keyX + halfWidth;
 
-      // Anchor the strip to its own key: the landing edge comes straight from
-      // that key's calibrated boundaries, and the strip rises vertically from
-      // there. Nothing is interpolated across the whole lane, so a note always
-      // lines up with the key it belongs to.
-      final baseLeft = _transformPoint(h, uLeft, anchorY);
-      final baseRight = _transformPoint(h, uRight, anchorY);
-      final heightLeft = _laneHeightAt(h, uLeft, whiteKeys.toDouble());
-      final heightRight = _laneHeightAt(h, uRight, whiteKeys.toDouble());
-
-      final bottomLeft = _lanePoint(baseLeft, heightLeft, riseSign, tBottom);
-      final bottomRight = _lanePoint(baseRight, heightRight, riseSign, tBottom);
-      final topRight = _lanePoint(baseRight, heightRight, riseSign, tTop);
-      final topLeft = _lanePoint(baseLeft, heightLeft, riseSign, tTop);
+      // Anchor the strip to its own key. Both edges go through the homography,
+      // so the strip sits exactly where that key sits -- key spacing compresses
+      // toward the far end of an angled keyboard, and interpolating linearly
+      // along the keyboard edge instead would drag notes many keys off target.
+      final bottomLeft = lanePointAt(uLeft, tBottom);
+      final bottomRight = lanePointAt(uRight, tBottom);
+      final topRight = lanePointAt(uRight, tTop);
+      final topLeft = lanePointAt(uLeft, tTop);
 
       // Determine color.
       Color baseColor;
@@ -180,23 +178,38 @@ class OverlayGeometry {
     );
   }
 
-  /// A point on the upright lane: [base] is the landing edge, and the lane
-  /// rises [riseSign] * [height] pixels away from it over the full lookahead.
-  static Offset _lanePoint(
-    Offset base,
-    double height,
-    double riseSign,
-    double t,
+  /// How far the tabletop lane may travel along the keyboard plane, in
+  /// keyboard depths, before it reaches the horizon.
+  ///
+  /// A point is in front of the camera while the homography's third row stays
+  /// positive. That row is linear in the canonical coordinates, so the crossing
+  /// point is exact: `w(t) = w0 + dw * t`. On most shots the lane runs *away*
+  /// from the horizon and nothing is clamped; on shots looking along the
+  /// keyboard plane this stops the lane just short of turning inside out.
+  static double _safeLaneExtent(
+    List<List<double>> h,
+    double anchorY,
+    double laneDir,
+    double whiteKeys,
   ) {
-    return Offset(base.dx, base.dy + riseSign * height * t);
+    var extent = _canonicalStripHeight;
+    final dw = h[2][1] * laneDir;
+    if (dw >= 0) return extent;
+    for (final u in [0.0, whiteKeys]) {
+      final w0 = h[2][0] * u + h[2][1] * anchorY + h[2][2];
+      if (w0 <= 0) continue;
+      final limit = 0.9 * w0 / -dw;
+      if (limit < extent) extent = limit;
+    }
+    return extent <= 0 ? 0.0 : extent;
   }
 
-  /// On-screen height of the lane above the key at canonical x [u], in pixels.
+  /// On-screen height of the upright lane above the key at canonical x [u], in
+  /// pixels.
   ///
   /// The keyboard's own depth at that x is the perspective cue: a wall of
   /// constant world height looks taller where it is nearer the camera. [u] is
-  /// clamped into the calibrated span so the measurement never leaves the quad
-  /// -- extrapolating past it is exactly what made the old lane degenerate.
+  /// clamped into the calibrated span so the measurement never leaves the quad.
   static double _laneHeightAt(
     List<List<double>> h,
     double u, [
