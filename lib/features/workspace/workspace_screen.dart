@@ -8,6 +8,7 @@ import '../../services/file_dialogs.dart';
 import '../../services/project_provider.dart';
 import '../../services/recent_projects.dart';
 import '../../services/recovery_service.dart';
+import '../../services/video_rendering.dart';
 import '../../services/native_bridge.dart';
 import '../../services/ableton/ableton_parser.dart';
 import '../../models/overlay_style.dart';
@@ -53,7 +54,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     super.initState();
     _recovery = RecoveryService(widget.provider)..start();
     _player = Player();
-    _videoController = VideoController(_player);
+    _videoController = VideoRendering.controllerFor(_player);
     _player.stream.playing.listen((p) => setState(() => _isPlaying = p));
     _player.stream.position.listen((p) => setState(() => _position = p));
     _player.stream.duration.listen((d) => setState(() => _duration = d));
