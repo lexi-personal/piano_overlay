@@ -174,16 +174,14 @@ impl Compositor {
         let w = width as i32;
         let h = height as i32;
 
-        let rounded = corner_radius > 0.0 || border_width > 0.0;
+        // Always shade from the signed distance field so edges are
+        // antialiased, matching the preview painter. Rounding is just a
+        // non-zero radius on top of the same path.
         let radius = corner_radius.min(Self::max_inset(quad));
-        let eroded = if rounded {
-            Self::erode_convex_quad(quad, radius)
-        } else {
-            None
-        };
+        let eroded = Self::erode_convex_quad(quad, radius);
 
         // Find bounding box, padded by one pixel for the antialiased edge.
-        let pad = if rounded { 1.0 } else { 0.0 };
+        let pad = 1.0;
         let min_x = (quad.iter().map(|p| p.x).fold(f64::MAX, f64::min) - pad).floor() as i32;
         let max_x = (quad.iter().map(|p| p.x).fold(f64::MIN, f64::max) + pad).ceil() as i32;
         let min_y = (quad.iter().map(|p| p.y).fold(f64::MAX, f64::min) - pad).floor() as i32;
@@ -210,6 +208,7 @@ impl Compositor {
                 let idx = ((y as usize) * (width as usize) + (x as usize)) * 4;
 
                 match &eroded {
+                    // Fallback for degenerate quads the erosion cannot handle.
                     None => {
                         if Self::point_in_convex_quad(px, py, quad) {
                             Self::blend_pixel(buffer, idx, color, 1.0);
@@ -239,9 +238,9 @@ impl Compositor {
         }
 
         if alpha >= 0.99 {
-            buffer[idx] = (color[0] * 255.0) as u8;
-            buffer[idx + 1] = (color[1] * 255.0) as u8;
-            buffer[idx + 2] = (color[2] * 255.0) as u8;
+            buffer[idx] = (color[0] * 255.0).round() as u8;
+            buffer[idx + 1] = (color[1] * 255.0).round() as u8;
+            buffer[idx + 2] = (color[2] * 255.0).round() as u8;
             buffer[idx + 3] = 255;
             return;
         }
@@ -259,10 +258,10 @@ impl Compositor {
         let out_g = (color[1] * alpha + dst_g * dst_a * (1.0 - alpha)) / out_a;
         let out_b = (color[2] * alpha + dst_b * dst_a * (1.0 - alpha)) / out_a;
 
-        buffer[idx] = (out_r * 255.0) as u8;
-        buffer[idx + 1] = (out_g * 255.0) as u8;
-        buffer[idx + 2] = (out_b * 255.0) as u8;
-        buffer[idx + 3] = (out_a * 255.0) as u8;
+        buffer[idx] = (out_r * 255.0).round() as u8;
+        buffer[idx + 1] = (out_g * 255.0).round() as u8;
+        buffer[idx + 2] = (out_b * 255.0).round() as u8;
+        buffer[idx + 3] = (out_a * 255.0).round() as u8;
     }
 
     /// Largest inset that still leaves a non-degenerate core, so a big corner
@@ -457,8 +456,50 @@ mod tests {
     }
 
     #[test]
-    fn test_corner_radius_cuts_corners() {
-        let quad = [
+    fn unrounded_edges_are_antialiased_like_the_preview() {
+        // A strip whose edge falls on a half-pixel. With a hard-edged fill the
+        // boundary column is either fully on or fully off; antialiasing gives
+        // it partial coverage instead.
+        let mut buffer = vec![0u8; 8 * 8 * 4];
+        for pixel in buffer.chunks_mut(4) {
+            pixel[3] = 255;
+        }
+
+        let frame = OverlayFrame {
+            strips: vec![NoteStrip {
+                quad: [
+                    Point2D::new(2.0, 2.0),
+                    Point2D::new(5.5, 2.0),
+                    Point2D::new(5.5, 6.0),
+                    Point2D::new(2.0, 6.0),
+                ],
+                color: [1.0, 1.0, 1.0, 1.0],
+                corner_radius: 0.0,
+                border_width: 0.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        Compositor::composite_frame(&mut buffer, 8, 8, &frame, 0.0);
+
+        let red_at = |x: usize, y: usize| buffer[(y * 8 + x) * 4];
+
+        // Interior stays fully covered and the outside stays untouched.
+        assert_eq!(red_at(3, 4), 255, "interior should be fully painted");
+        assert_eq!(red_at(7, 4), 0, "outside the quad should be untouched");
+
+        // The pixel straddling the x = 5.5 edge must be partially covered.
+        let edge = red_at(5, 4);
+        assert!(
+            edge > 0 && edge < 255,
+            "edge pixel should be antialiased, got {}",
+            edge
+        );
+    }
+
+    #[test]
+    fn test_corner_radius_cuts_corners() {        let quad = [
             Point2D::new(0.0, 0.0),
             Point2D::new(20.0, 0.0),
             Point2D::new(20.0, 20.0),
