@@ -38,6 +38,8 @@ class NativeBridge {
   late _FfiStringArgDart _computeCalibration;
   late _FfiStringArgDart _computeOverlayFrame;
   late _FfiStringArgDart _startExport;
+  late _FfiHealthCheckDart _getExportProgress;
+  late _FfiHealthCheckDart _cancelExport;
   late _FfiHealthCheckDart _checkFfmpeg;
   late _FfiStringArgDart _saveProject;
   late _FfiStringArgDart _loadProject;
@@ -61,6 +63,10 @@ class NativeBridge {
         .lookupFunction<_FfiStringArgC, _FfiStringArgDart>('ffi_compute_overlay_frame');
     _startExport = _lib!
         .lookupFunction<_FfiStringArgC, _FfiStringArgDart>('ffi_start_export');
+    _getExportProgress = _lib!
+        .lookupFunction<_FfiHealthCheckC, _FfiHealthCheckDart>('ffi_get_export_progress');
+    _cancelExport = _lib!
+        .lookupFunction<_FfiHealthCheckC, _FfiHealthCheckDart>('ffi_cancel_export');
     _checkFfmpeg = _lib!
         .lookupFunction<_FfiHealthCheckC, _FfiHealthCheckDart>('ffi_check_ffmpeg');
     _saveProject = _lib!
@@ -216,6 +222,25 @@ class NativeBridge {
       calloc.free(inputPtr);
       if (resultPtr != null) _freeString(resultPtr);
     }
+  }
+
+  /// Poll the running export for live progress. Safe to call from any isolate
+  /// while [startExport] blocks, since the native pipeline is process-global.
+  Map<String, dynamic> getExportProgress() {
+    _ensureInitialized();
+    final resultPtr = _getExportProgress();
+    final jsonStr = resultPtr.toDartString();
+    _freeString(resultPtr);
+    return jsonDecode(jsonStr) as Map<String, dynamic>;
+  }
+
+  /// Request cancellation of the running export.
+  Map<String, dynamic> cancelExport() {
+    _ensureInitialized();
+    final resultPtr = _cancelExport();
+    final jsonStr = resultPtr.toDartString();
+    _freeString(resultPtr);
+    return jsonDecode(jsonStr) as Map<String, dynamic>;
   }
 
   /// Save project JSON to a .pvproj file via Rust.

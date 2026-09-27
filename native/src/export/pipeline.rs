@@ -253,12 +253,20 @@ impl ExportPipeline {
             .take()
             .ok_or("Failed to capture encoder stdin")?;
 
+        // Drain both stderr pipes on their own threads. Left unread, a full
+        // pipe buffer blocks the ffmpeg child and deadlocks the export.
+        let decoder_err = Self::drain_stderr(decoder.stderr.take());
+        let encoder_err = Self::drain_stderr(encoder.stderr.take());
+
         // Process frames
         let result = self.process_frames(decoder_stdout, encoder_stdin, config, total_frames);
 
         // Wait for processes to finish
         let _ = decoder.wait();
         let encoder_result = encoder.wait();
+
+        let decoder_err = decoder_err.and_then(|h| h.join().ok()).unwrap_or_default();
+        let encoder_err = encoder_err.and_then(|h| h.join().ok()).unwrap_or_default();
 
         match result {
             Ok(()) => {
@@ -267,7 +275,15 @@ impl ExportPipeline {
                         *self.progress.status.lock().unwrap() = ExportStatus::Complete;
                         Ok(())
                     } else {
-                        let msg = "FFmpeg encoder exited with error".to_string();
+                        let detail: Vec<&str> = [encoder_err.trim(), decoder_err.trim()]
+                            .into_iter()
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        let msg = if detail.is_empty() {
+                            "FFmpeg encoder exited with error".to_string()
+                        } else {
+                            format!("FFmpeg encoder exited with error: {}", detail.join("\n"))
+                        };
                         *self.progress.status.lock().unwrap() = ExportStatus::Failed;
                         *self.progress.error.lock().unwrap() = Some(msg.clone());
                         Err(msg)
@@ -278,11 +294,34 @@ impl ExportPipeline {
                 }
             }
             Err(e) => {
-                *self.progress.status.lock().unwrap() = ExportStatus::Failed;
-                *self.progress.error.lock().unwrap() = Some(e.clone());
-                Err(e)
+                let status = if self.progress.cancelled.load(Ordering::Relaxed) {
+                    ExportStatus::Cancelled
+                } else {
+                    ExportStatus::Failed
+                };
+                let msg = if decoder_err.trim().is_empty() {
+                    e
+                } else {
+                    format!("{} (ffmpeg: {})", e, decoder_err.trim())
+                };
+                *self.progress.status.lock().unwrap() = status;
+                *self.progress.error.lock().unwrap() = Some(msg.clone());
+                Err(msg)
             }
         }
+    }
+
+    /// Read a child's stderr to completion so its pipe buffer cannot fill up.
+    fn drain_stderr(
+        stderr: Option<std::process::ChildStderr>,
+    ) -> Option<std::thread::JoinHandle<String>> {
+        stderr.map(|mut pipe| {
+            std::thread::spawn(move || {
+                let mut buf = String::new();
+                let _ = pipe.read_to_string(&mut buf);
+                buf
+            })
+        })
     }
 
     /// Process frames: read from decoder, composite overlay, write to encoder.

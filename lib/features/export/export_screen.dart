@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:isolate';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -24,6 +25,7 @@ class _ExportScreenState extends State<ExportScreen> {
   String _quality = 'high';
   Isolate? _exportIsolate;
   ReceivePort? _receivePort;
+  Timer? _pollTimer;
   bool _ffmpegAvailable = true;
 
   @override
@@ -47,15 +49,64 @@ class _ExportScreenState extends State<ExportScreen> {
 
   @override
   void dispose() {
-    _cancelExport();
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _requestNativeCancel();
+    _teardownExport();
     super.dispose();
   }
 
-  void _cancelExport() {
+  /// Ask the native pipeline to stop so its ffmpeg children exit cleanly
+  /// instead of being orphaned when the isolate is killed.
+  void _requestNativeCancel() {
+    try {
+      final bridge = NativeBridge();
+      if (bridge.isInitialized) bridge.cancelExport();
+    } catch (_) {
+      // Cancellation is best effort.
+    }
+  }
+
+  void _teardownExport() {
     _exportIsolate?.kill(priority: Isolate.immediate);
     _exportIsolate = null;
     _receivePort?.close();
     _receivePort = null;
+  }
+
+  void _cancelExport() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _requestNativeCancel();
+    _teardownExport();
+  }
+
+  /// Poll the native pipeline for progress while the export isolate blocks.
+  void _startProgressPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 250), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final Map<String, dynamic> progress;
+      try {
+        final bridge = NativeBridge();
+        if (!bridge.isInitialized) return;
+        progress = bridge.getExportProgress();
+      } catch (_) {
+        return;
+      }
+      final percent = (progress['percent'] as num?)?.toDouble();
+      final status = progress['status'] as String?;
+      if (percent == null) return;
+      setState(() {
+        _progress = percent;
+        if (status == 'Finalizing' && _state == ExportState.encoding) {
+          _state = ExportState.finalizing;
+        }
+      });
+    });
   }
 
   @override
@@ -307,17 +358,30 @@ class _ExportScreenState extends State<ExportScreen> {
         ),
       );
 
+      _startProgressPolling();
+
       await for (final message in _receivePort!) {
         if (message is Map<String, dynamic>) {
           final status = message['status'] as String?;
           if (status == 'progress') {
             setState(() => _progress = (message['percent'] as num).toDouble());
           } else if (status == 'Complete') {
+            _pollTimer?.cancel();
+            _pollTimer = null;
             setState(() { _state = ExportState.complete; _progress = 100; });
             _receivePort?.close();
             _exportIsolate = null;
             break;
+          } else if (status == 'Cancelled') {
+            _pollTimer?.cancel();
+            _pollTimer = null;
+            setState(() => _state = ExportState.cancelled);
+            _receivePort?.close();
+            _exportIsolate = null;
+            break;
           } else if (status == 'Failed') {
+            _pollTimer?.cancel();
+            _pollTimer = null;
             setState(() {
               _state = ExportState.failed;
               _errorMessage = message['error'] ?? 'Unknown error';
@@ -329,6 +393,8 @@ class _ExportScreenState extends State<ExportScreen> {
         }
       }
     } catch (e) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
       setState(() { _state = ExportState.failed; _errorMessage = e.toString(); });
     }
   }
@@ -391,11 +457,13 @@ void _exportIsolateEntry(_ExportIsolateMessage message) {
 
     // Send final result
     final status = result['status'] as String?;
-    if (status == 'Complete' || status == 'Encoding') {
+    if (status == 'Complete') {
       message.sendPort.send({'status': 'Complete'});
+    } else if (status == 'Cancelled') {
+      message.sendPort.send({'status': 'Cancelled'});
     } else {
       message.sendPort.send({
-        'status': result['status'] ?? 'Failed',
+        'status': 'Failed',
         'error': result['error'] ?? 'Unknown error',
       });
     }

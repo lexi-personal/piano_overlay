@@ -7,12 +7,20 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::calibration::{compute_calibration, KeyboardCorners, KeyboardSize, Point2D};
 use crate::export::{ExportPipeline, ExportProgress};
 use crate::midi;
 use crate::overlay_geometry::{OverlayEngine, OverlayStyle, SyncSettings};
 use crate::video;
+
+/// The export currently running, so progress can be polled and cancellation
+/// requested while `ffi_start_export` blocks on another thread.
+fn active_export() -> &'static Mutex<Option<Arc<ExportPipeline>>> {
+    static ACTIVE_EXPORT: OnceLock<Mutex<Option<Arc<ExportPipeline>>>> = OnceLock::new();
+    ACTIVE_EXPORT.get_or_init(|| Mutex::new(None))
+}
 
 /// Free a string previously returned by this library.
 #[no_mangle]
@@ -143,30 +151,60 @@ pub extern "C" fn ffi_compute_overlay_frame(input_json: *const c_char) -> *mut c
 pub extern "C" fn ffi_start_export(input_json: *const c_char) -> *mut c_char {
     let input_str = unsafe { CStr::from_ptr(input_json).to_str().unwrap_or("") };
 
-    let result: Result<String, String> = (|| {
-        let config: crate::export::pipeline::ExportConfig =
-            serde_json::from_str(input_str).map_err(|e| format!("Invalid config: {}", e))?;
+    let config: Result<crate::export::pipeline::ExportConfig, String> =
+        serde_json::from_str(input_str).map_err(|e| format!("Invalid config: {}", e));
 
-        let pipeline = ExportPipeline::new();
-        pipeline.run(&config)?;
-
-        let progress = pipeline.get_progress();
-        serde_json::to_string(&progress).map_err(|e| e.to_string())
-    })();
-
-    match result {
-        Ok(json) => to_c_string(&json),
-        Err(e) => {
-            let err_progress = ExportProgress {
-                current_frame: 0,
-                total_frames: 0,
-                percent: 0.0,
-                status: crate::export::ExportStatus::Failed,
-                error: Some(e),
-            };
-            to_c_string(&serde_json::to_string(&err_progress).unwrap_or_default())
+    let progress = match config {
+        Err(e) => ExportProgress {
+            current_frame: 0,
+            total_frames: 0,
+            percent: 0.0,
+            status: crate::export::ExportStatus::Failed,
+            error: Some(e),
+        },
+        Ok(config) => {
+            let pipeline = Arc::new(ExportPipeline::new());
+            *active_export().lock().unwrap() = Some(Arc::clone(&pipeline));
+            let _ = pipeline.run(&config);
+            // Report the pipeline's own terminal state, so a cancelled export
+            // is not misreported as a failure.
+            let progress = pipeline.get_progress();
+            *active_export().lock().unwrap() = None;
+            progress
         }
-    }
+    };
+
+    to_c_string(&serde_json::to_string(&progress).unwrap_or_default())
+}
+
+/// Poll the currently running export. Returns JSON `ExportProgress`.
+/// When no export is running, reports the idle state.
+#[no_mangle]
+pub extern "C" fn ffi_get_export_progress() -> *mut c_char {
+    let progress = match active_export().lock().unwrap().as_ref() {
+        Some(pipeline) => pipeline.get_progress(),
+        None => ExportProgress {
+            current_frame: 0,
+            total_frames: 0,
+            percent: 0.0,
+            status: crate::export::ExportStatus::Idle,
+            error: None,
+        },
+    };
+    to_c_string(&serde_json::to_string(&progress).unwrap_or_default())
+}
+
+/// Request cancellation of the running export. Returns JSON {"cancelled": bool}.
+#[no_mangle]
+pub extern "C" fn ffi_cancel_export() -> *mut c_char {
+    let cancelled = match active_export().lock().unwrap().as_ref() {
+        Some(pipeline) => {
+            pipeline.cancel();
+            true
+        }
+        None => false,
+    };
+    to_c_string(&serde_json::json!({ "cancelled": cancelled }).to_string())
 }
 
 /// Check if ffmpeg is available. Returns JSON {"available": true/false, "version": "..."}.
