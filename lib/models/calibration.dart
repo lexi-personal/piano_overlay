@@ -36,6 +36,15 @@ enum KeyboardSize {
   int get highestNote => lowestNote + totalKeys - 1;
 
   String get label => this == custom ? 'Custom' : '$totalKeys keys';
+
+  /// Serialized form understood by the Rust core and by [CalibrationData].
+  String get wireName => switch (this) {
+        keys88 => 'Keys88',
+        keys76 => 'Keys76',
+        keys61 => 'Keys61',
+        keys49 => 'Keys49',
+        custom => 'Custom',
+      };
 }
 
 /// Custom key range for when only part of the keyboard is visible.
@@ -149,12 +158,14 @@ class CalibrationData {
 
   static KeyboardSize _parseKeyboardSize(dynamic value) {
     if (value is String) {
-      switch (value) {
-        case 'Keys88': return KeyboardSize.keys88;
-        case 'Keys76': return KeyboardSize.keys76;
-        case 'Keys61': return KeyboardSize.keys61;
-        case 'Keys49': return KeyboardSize.keys49;
-        case 'Custom': return KeyboardSize.custom;
+      // Accepts both the wire form ('Keys88') and the enum name ('keys88')
+      // written by older builds.
+      switch (value.toLowerCase()) {
+        case 'keys88': return KeyboardSize.keys88;
+        case 'keys76': return KeyboardSize.keys76;
+        case 'keys61': return KeyboardSize.keys61;
+        case 'keys49': return KeyboardSize.keys49;
+        case 'custom': return KeyboardSize.custom;
       }
     }
     return KeyboardSize.keys88;

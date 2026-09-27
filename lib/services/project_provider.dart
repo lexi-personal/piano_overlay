@@ -246,7 +246,7 @@ class ProjectProvider extends ChangeNotifier {
   Map<String, dynamic> _calibrationToJson(CalibrationData cal) {
     return {
       'corners': cal.corners.toJson(),
-      'keyboard_size': cal.keyboardSize.name,
+      'keyboard_size': cal.keyboardSize.wireName,
       'key_range': cal.keyRange.toJson(),
       'homography': cal.homography,
       'key_positions': cal.keyPositions.map((k) => <String, dynamic>{

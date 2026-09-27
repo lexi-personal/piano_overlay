@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../services/file_dialogs.dart';
 import '../../services/project_provider.dart';
 import '../../services/native_bridge.dart';
+import '../../models/project.dart';
 
 enum ExportState { idle, preparing, encoding, finalizing, complete, failed, cancelled }
 
@@ -332,11 +333,11 @@ class _ExportScreenState extends State<ExportScreen> {
     }
   }
 
-  Map<String, dynamic> _buildCalibrationJson(project) {
+  Map<String, dynamic> _buildCalibrationJson(Project project) {
     final cal = project.calibration!;
     return {
       'corners': cal.corners.toJson(),
-      'keyboard_size': cal.keyboardSize.name,
+      'keyboard_size': cal.keyboardSize.wireName,
       'key_range': {
         'lowest_note': cal.keyRange.lowestNote,
         'highest_note': cal.keyRange.highestNote,
@@ -352,7 +353,7 @@ class _ExportScreenState extends State<ExportScreen> {
     };
   }
 
-  Map<String, dynamic> _buildStyleJson(project) => project.style.toNativeJson();
+  Map<String, dynamic> _buildStyleJson(Project project) => project.style.toNativeJson();
 
   String? _findLibraryPath() {
     final candidates = [
