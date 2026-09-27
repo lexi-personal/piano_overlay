@@ -16,6 +16,7 @@ import '../../models/calibration.dart';
 import '../../models/midi_note.dart';
 import '../../models/video_metadata.dart';
 import '../../shared/overlay_geometry.dart';
+import '../../shared/color_picker_dialog.dart';
 import '../calibration/calibration_editor.dart';
 import '../preview/overlay_painter.dart';
 import 'ableton_import_dialog.dart';
@@ -606,9 +607,44 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onChanged: (v) => widget.provider
               .updateStyle(style.copyWith(keyHighlightEnabled: v)),
         ),
-        if (style.keyHighlightEnabled)
-          _colorRow('Highlight', style.keyHighlightColor, (c) =>
-              widget.provider.updateStyle(style.copyWith(keyHighlightColor: c))),
+        if (style.keyHighlightEnabled) ...[
+          SwitchListTile(
+            title: const Text('Use note color'),
+            subtitle: const Text(
+              'Light each key with the color of the note playing it',
+              style: TextStyle(fontSize: 11),
+            ),
+            value: style.keyHighlightUseNoteColor,
+            dense: true,
+            onChanged: (v) => widget.provider
+                .updateStyle(style.copyWith(keyHighlightUseNoteColor: v)),
+          ),
+          if (style.keyHighlightUseNoteColor)
+            // The note supplies the hue, but the highlight color still carries
+            // the opacity, so expose that on its own.
+            _sliderRow('Opacity', style.keyHighlightColor.opacity, 0, 1, (v) =>
+                widget.provider.updateStyle(style.copyWith(
+                    keyHighlightColor: style.keyHighlightColor.withOpacity(v))))
+          else
+            _colorRow('Highlight', style.keyHighlightColor, (c) =>
+                widget.provider.updateStyle(style.copyWith(keyHighlightColor: c))),
+          _sliderRow('Intensity', style.keyHighlightIntensity, 0, 3, (v) =>
+              widget.provider.updateStyle(style.copyWith(keyHighlightIntensity: v))),
+          _sliderRow('Size', style.keyHighlightSize, 0.1, 1, (v) =>
+              widget.provider.updateStyle(style.copyWith(keyHighlightSize: v))),
+          _sliderRow('Glow', style.keyHighlightGlow, 0, 1, (v) =>
+              widget.provider.updateStyle(style.copyWith(keyHighlightGlow: v))),
+          if (style.keyHighlightGlow > 0)
+            _sliderRow('Glow Radius', style.keyHighlightGlowRadius, 0, 30, (v) =>
+                widget.provider.updateStyle(style.copyWith(keyHighlightGlowRadius: v)),
+                suffix: ' px'),
+          _sliderRow('Fade Out', style.keyHighlightFadeMs, 0, 1000, (v) =>
+              widget.provider.updateStyle(style.copyWith(keyHighlightFadeMs: v)),
+              suffix: ' ms'),
+          _sliderRow('Corner Radius', style.keyHighlightCornerRadius, 0, 0.5, (v) =>
+              widget.provider.updateStyle(
+                  style.copyWith(keyHighlightCornerRadius: v))),
+        ],
         const SizedBox(height: 16),
         _sectionHeader('Timing'),
         _sliderRow('Lookahead', style.lookaheadMs, 500, 5000, (v) =>
@@ -1185,64 +1221,36 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       dense: true,
       title: Text(label, style: const TextStyle(fontSize: 13)),
       trailing: GestureDetector(
-        onTap: () => _pickColor(color, onChange),
-        child: Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.white24),
+        onTap: () => _pickColor(label, color, onChange),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            // The checkerboard shows through a partly transparent swatch, so
+            // the opacity is visible without opening the picker.
+            child: CustomPaint(
+              painter: const CheckerPainter(),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.white24),
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  void _pickColor(Color current, ValueChanged<Color> onChange) {
-    // Simple color picker using predefined palette
-    final colors = [
-      const Color(0xFF4FC3F7),
-      const Color(0xFFFF7043),
-      const Color(0xFF66BB6A),
-      const Color(0xFFAB47BC),
-      const Color(0xFFFFCA28),
-      const Color(0xFFEF5350),
-      const Color(0xFF26C6DA),
-      const Color(0xFFEC407A),
-      const Color(0xFF7E57C2),
-      const Color(0xFF29B6F6),
-      const Color(0xFFFFA726),
-      const Color(0xFF8D6E63),
-    ];
-    showDialog(
+  void _pickColor(String label, Color current, ValueChanged<Color> onChange) {
+    showOverlayColorPicker(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Pick Color'),
-        content: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: colors
-              .map((c) => GestureDetector(
-                    onTap: () {
-                      onChange(c);
-                      Navigator.pop(ctx);
-                    },
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: c,
-                        borderRadius: BorderRadius.circular(6),
-                        border: c == current
-                            ? Border.all(color: Colors.white, width: 2)
-                            : null,
-                      ),
-                    ),
-                  ))
-              .toList(),
-        ),
-      ),
+      initial: current,
+      onChanged: onChange,
+      title: label,
     );
   }
 

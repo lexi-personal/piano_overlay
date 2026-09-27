@@ -67,7 +67,14 @@ class OverlayPainter extends CustomPainter {
 
     // Draw key highlights first (below strips)
     for (final highlight in keyHighlights) {
-      _drawQuad(canvas, highlight.quad, highlight.color, null);
+      if (highlight.glowRadius > 0 && highlight.glowIntensity > 0) {
+        final glowColor = highlight.color
+            .withOpacity(highlight.color.opacity * highlight.glowIntensity * 0.6);
+        _drawQuad(canvas, highlight.quad, glowColor, highlight.glowRadius,
+            cornerRadius: highlight.cornerRadius);
+      }
+      _drawQuad(canvas, highlight.quad, highlight.color, null,
+          cornerRadius: highlight.cornerRadius);
     }
 
     // Draw note strips with glow
@@ -258,9 +265,21 @@ class KeyHighlightRenderData {
   final List<Offset> quad;
   final Color color;
 
+  /// Bloom radius in pixels (0 = no bloom).
+  final double glowRadius;
+
+  /// Bloom intensity (0-1).
+  final double glowIntensity;
+
+  /// Corner rounding radius in pixels.
+  final double cornerRadius;
+
   const KeyHighlightRenderData({
     required this.quad,
     required this.color,
+    this.glowRadius = 0,
+    this.glowIntensity = 0,
+    this.cornerRadius = 0,
   });
 
   factory KeyHighlightRenderData.fromJson(Map<String, dynamic> json) {
@@ -278,6 +297,9 @@ class KeyHighlightRenderData {
         (colorData[2] * 255).round(),
         (colorData[3] as num).toDouble(),
       ),
+      glowRadius: (json['glow_radius'] as num?)?.toDouble() ?? 0,
+      glowIntensity: (json['glow_intensity'] as num?)?.toDouble() ?? 0,
+      cornerRadius: (json['corner_radius'] as num?)?.toDouble() ?? 0,
     );
   }
 }

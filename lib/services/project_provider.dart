@@ -278,6 +278,17 @@ class ProjectProvider extends ChangeNotifier {
       fallSpeed: (json['fall_speed'] as num?)?.toDouble() ?? 200.0,
       keyHighlightEnabled: json['key_highlight_enabled'] ?? true,
       keyHighlightColor: _hexToColor(json['key_highlight_color'] ?? '#40FFFFFF'),
+      keyHighlightIntensity:
+          (json['key_highlight_intensity'] as num?)?.toDouble() ?? 1.0,
+      keyHighlightSize: (json['key_highlight_size'] as num?)?.toDouble() ?? 1.0,
+      keyHighlightGlow: (json['key_highlight_glow'] as num?)?.toDouble() ?? 0.0,
+      keyHighlightGlowRadius:
+          (json['key_highlight_glow_radius'] as num?)?.toDouble() ?? 8.0,
+      keyHighlightFadeMs:
+          (json['key_highlight_fade_ms'] as num?)?.toDouble() ?? 0.0,
+      keyHighlightCornerRadius:
+          (json['key_highlight_corner_radius'] as num?)?.toDouble() ?? 0.0,
+      keyHighlightUseNoteColor: json['key_highlight_use_note_color'] ?? false,
       fallDirection: json['fall_direction'] == 'bottomToTop'
           ? FallDirection.bottomToTop
           : FallDirection.topToBottom,

@@ -34,6 +34,29 @@ pub struct OverlayStyle {
     pub key_highlight_enabled: bool,
     /// Key highlight color (RGBA).
     pub key_highlight_color: [f32; 4],
+    /// Multiplies the key highlight's alpha. 1.0 uses the picked color as-is.
+    #[serde(default = "default_one")]
+    pub key_highlight_intensity: f32,
+    /// How much of the key's depth the highlight covers, anchored at the front
+    /// edge. 1.0 lights the whole key top.
+    #[serde(default = "default_one")]
+    pub key_highlight_size: f32,
+    /// Bloom strength around a lit key (0.0 = no bloom).
+    #[serde(default)]
+    pub key_highlight_glow: f32,
+    /// Bloom spread in pixels.
+    #[serde(default = "default_highlight_glow_radius")]
+    pub key_highlight_glow_radius: f32,
+    /// How long the highlight lingers and fades after the note releases, in ms.
+    #[serde(default)]
+    pub key_highlight_fade_ms: f64,
+    /// Highlight corner rounding as a fraction of the key width.
+    #[serde(default)]
+    pub key_highlight_corner_radius: f32,
+    /// Tint the highlight with the playing note's color instead of the fixed
+    /// highlight color. The highlight's own alpha still controls its strength.
+    #[serde(default)]
+    pub key_highlight_use_note_color: bool,
     /// Background dimming (0.0 = no dim, 1.0 = fully black).
     pub background_dim: f32,
     /// Color for notes played by the left hand (track 0) when `use_hand_colors` is set.
@@ -75,6 +98,14 @@ fn default_border_color() -> [f32; 4] {
     [1.0, 1.0, 1.0, 0.9]
 }
 
+fn default_one() -> f32 {
+    1.0
+}
+
+fn default_highlight_glow_radius() -> f32 {
+    8.0
+}
+
 impl Default for OverlayStyle {
     fn default() -> Self {
         Self {
@@ -92,6 +123,13 @@ impl Default for OverlayStyle {
             lane_projection: LaneProjection::default(),
             key_highlight_enabled: true,
             key_highlight_color: [1.0, 1.0, 1.0, 0.25],
+            key_highlight_intensity: 1.0,
+            key_highlight_size: 1.0,
+            key_highlight_glow: 0.0,
+            key_highlight_glow_radius: 8.0,
+            key_highlight_fade_ms: 0.0,
+            key_highlight_corner_radius: 0.0,
+            key_highlight_use_note_color: false,
             background_dim: 0.0,
             left_hand_color: default_left_hand_color(),
             right_hand_color: default_right_hand_color(),
@@ -155,6 +193,15 @@ pub struct KeyHighlight {
     pub quad: [Point2D; 4],
     /// Highlight color (RGBA).
     pub color: [f32; 4],
+    /// Bloom radius in screen pixels (0.0 = no bloom).
+    #[serde(default)]
+    pub glow_radius: f32,
+    /// Bloom intensity (0.0-1.0).
+    #[serde(default)]
+    pub glow_intensity: f32,
+    /// Corner rounding radius in screen pixels (0.0 = square corners).
+    #[serde(default)]
+    pub corner_radius: f32,
 }
 
 /// Complete overlay frame data for a single point in time.

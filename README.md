@@ -57,6 +57,31 @@ file stores:
 - **Deactivated clips and deactivated individual notes are skipped.**
 - Arrangement clips win; a set that only ever used the Session view falls back to its clip slots.
 
+### Styling the overlay
+
+Every colour swatch in the **Style** panel opens the same picker: 56 presets, a
+saturation/value square with a hue ramp for anything else, a `#RRGGBB` / `#AARRGGBB` hex field,
+and an opacity slider over a checkerboard. Changes preview live on the video behind the dialog,
+and **Cancel** puts the original colour back. Tapping a preset keeps whatever opacity you had
+dialled in, so you can pick a hue without losing your transparency.
+
+**Key Highlight** lights up each key while it is being played:
+
+- **Use note color** — the lit key borrows the colour of the note playing it, following the
+  white/black key colours or the per-hand colours. The highlight's own opacity still controls
+  how strong it looks, so that moves to its own slider.
+- **Intensity** multiplies the highlight's opacity, up to fully opaque.
+- **Size** is how much of the key's front-to-back depth the light covers. It shrinks toward the
+  near edge of the key, so a small value reads as a bar across the front rather than a band
+  floating in the middle.
+- **Glow** and **Glow Radius** add a soft bloom around the lit key.
+- **Fade Out** keeps the light on after the note releases and decays it over that many
+  milliseconds. Zero turns off the instant the note ends.
+- **Corner Radius** rounds the lit key, as a fraction of the key's width.
+
+All of these default to the previous fixed behaviour, so existing projects look unchanged until
+you move a slider.
+
 ## Architecture
 
 ```

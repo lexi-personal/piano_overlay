@@ -86,7 +86,15 @@ impl OverlayEngine {
             let start_offset = note.start_ms - effective_time;
             let end_offset = (note.start_ms + note.duration_ms) - effective_time;
 
-            if end_offset < -Self::TRAIL_FADE_MS || start_offset > lookahead {
+            // A lingering key highlight can outlive the strip's own trail, so
+            // keep the note alive for whichever of the two lasts longer.
+            let highlight_fade_ms = if style.key_highlight_enabled {
+                style.key_highlight_fade_ms
+            } else {
+                0.0
+            };
+            let keep_alive_ms = highlight_fade_ms.max(Self::TRAIL_FADE_MS);
+            if end_offset < -keep_alive_ms || start_offset > lookahead {
                 continue;
             }
             let is_sounding = start_offset <= 0.0 && end_offset >= 0.0;
@@ -99,6 +107,48 @@ impl OverlayEngine {
 
             let is_black = is_black_key(note.pitch);
             let key_x = key_canonical_x(note.pitch, key_range.lowest_note, is_black);
+
+            let base_color = if style.use_hand_colors {
+                if note.track == 0 {
+                    style.left_hand_color
+                } else {
+                    style.right_hand_color
+                }
+            } else if is_black {
+                style.black_key_color
+            } else {
+                style.white_key_color
+            };
+
+            // Key highlights are computed before the strip geometry because
+            // once a note has ended its strip collapses to zero length and is
+            // culled, while the highlight may still be fading out.
+            if style.key_highlight_enabled
+                && start_offset <= 0.0
+                && end_offset >= -highlight_fade_ms
+            {
+                let quad = key_quad(h, key_x, is_black, style.key_highlight_size as f64);
+                let mut alpha = style.key_highlight_color[3] * style.key_highlight_intensity;
+                if end_offset < 0.0 && highlight_fade_ms > 0.0 {
+                    alpha *= (1.0 - (-end_offset / highlight_fade_ms).clamp(0.0, 1.0)) as f32;
+                }
+                let mut color = if style.key_highlight_use_note_color {
+                    base_color
+                } else {
+                    style.key_highlight_color
+                };
+                color[3] = alpha.clamp(0.0, 1.0);
+                // Rounding is stored as a fraction of the key width so that
+                // preview and export agree at different resolutions.
+                let key_px_width = distance(&quad[3], &quad[2]);
+                key_highlights.push(KeyHighlight {
+                    quad,
+                    color,
+                    glow_radius: style.key_highlight_glow_radius,
+                    glow_intensity: style.key_highlight_glow,
+                    corner_radius: (style.key_highlight_corner_radius as f64 * key_px_width) as f32,
+                });
+            }
 
             let t_bottom = (start_offset / lookahead).clamp(0.0, 1.0);
             let t_top = (end_offset / lookahead).clamp(t_bottom, 1.0);
@@ -120,17 +170,7 @@ impl OverlayEngine {
             let top_right = lane(u_right, t_top);
             let top_left = lane(u_left, t_top);
 
-            let mut color = if style.use_hand_colors {
-                if note.track == 0 {
-                    style.left_hand_color
-                } else {
-                    style.right_hand_color
-                }
-            } else if is_black {
-                style.black_key_color
-            } else {
-                style.white_key_color
-            };
+            let mut color = base_color;
 
             let mut opacity = style.transparency;
             if end_offset < 0.0 {
@@ -151,13 +191,6 @@ impl OverlayEngine {
                 border_width: (style.border_width as f64 * strip_px_width) as f32,
                 border_color: style.border_color,
             });
-
-            if style.key_highlight_enabled && is_sounding {
-                key_highlights.push(KeyHighlight {
-                    quad: key_quad(h, key_x, is_black),
-                    color: style.key_highlight_color,
-                });
-            }
         }
 
         OverlayFrame {
@@ -211,13 +244,20 @@ fn lane_height_at(h: &[[f64; 3]; 3], u: f64, white_keys: f64) -> f64 {
 }
 
 /// Screen-space quad of a key on the keyboard surface (canonical y = 0..1).
-fn key_quad(homography: &[[f64; 3]; 3], key_x: f64, is_black: bool) -> [Point2D; 4] {
+/// The key rectangle on the keyboard surface.
+///
+/// `depth` is the fraction of the key's front-to-back extent the rectangle
+/// covers. It shrinks toward the front edge (y=1), so a partial highlight
+/// reads as a light sitting at the near edge of the key rather than a band
+/// floating in its middle.
+fn key_quad(homography: &[[f64; 3]; 3], key_x: f64, is_black: bool, depth: f64) -> [Point2D; 4] {
     let half_width = if is_black { 0.55 } else { 0.9 } / 2.0;
     let x_left = key_x - half_width;
     let x_right = key_x + half_width;
+    let y_top = 1.0 - depth.clamp(0.0, 1.0);
     [
-        transform_point(homography, &Point2D::new(x_left, 0.0)),
-        transform_point(homography, &Point2D::new(x_right, 0.0)),
+        transform_point(homography, &Point2D::new(x_left, y_top)),
+        transform_point(homography, &Point2D::new(x_right, y_top)),
         transform_point(homography, &Point2D::new(x_right, 1.0)),
         transform_point(homography, &Point2D::new(x_left, 1.0)),
     ]

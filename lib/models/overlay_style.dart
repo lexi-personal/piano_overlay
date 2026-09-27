@@ -18,6 +18,30 @@ class OverlayStyle {
   final LaneProjection laneProjection;
   final bool keyHighlightEnabled;
   final Color keyHighlightColor;
+
+  /// Multiplies the key highlight's alpha. 1.0 uses the picked color as-is.
+  final double keyHighlightIntensity;
+
+  /// How much of the key's depth the highlight covers, anchored at the front
+  /// edge. 1.0 lights the whole key top.
+  final double keyHighlightSize;
+
+  /// Bloom strength around a lit key (0 = no bloom).
+  final double keyHighlightGlow;
+
+  /// Bloom spread in pixels.
+  final double keyHighlightGlowRadius;
+
+  /// How long the highlight lingers and fades after the note releases, in ms.
+  final double keyHighlightFadeMs;
+
+  /// Highlight corner rounding as a fraction of the key width.
+  final double keyHighlightCornerRadius;
+
+  /// Tint the highlight with the playing note's color instead of the fixed
+  /// highlight color. The highlight's own alpha still controls its strength.
+  final bool keyHighlightUseNoteColor;
+
   final double backgroundDim;
   final double laneOpacity;
   final bool useHandColors;
@@ -48,6 +72,13 @@ class OverlayStyle {
     this.laneProjection = LaneProjection.tabletop,
     this.keyHighlightEnabled = true,
     this.keyHighlightColor = const Color(0x40FFFFFF),
+    this.keyHighlightIntensity = 1.0,
+    this.keyHighlightSize = 1.0,
+    this.keyHighlightGlow = 0.0,
+    this.keyHighlightGlowRadius = 8.0,
+    this.keyHighlightFadeMs = 0.0,
+    this.keyHighlightCornerRadius = 0.0,
+    this.keyHighlightUseNoteColor = false,
     this.backgroundDim = 0.0,
     this.laneOpacity = 0.55,
     this.useHandColors = false,
@@ -73,6 +104,13 @@ class OverlayStyle {
     LaneProjection? laneProjection,
     bool? keyHighlightEnabled,
     Color? keyHighlightColor,
+    double? keyHighlightIntensity,
+    double? keyHighlightSize,
+    double? keyHighlightGlow,
+    double? keyHighlightGlowRadius,
+    double? keyHighlightFadeMs,
+    double? keyHighlightCornerRadius,
+    bool? keyHighlightUseNoteColor,
     double? backgroundDim,
     double? laneOpacity,
     bool? useHandColors,
@@ -97,6 +135,17 @@ class OverlayStyle {
       laneProjection: laneProjection ?? this.laneProjection,
       keyHighlightEnabled: keyHighlightEnabled ?? this.keyHighlightEnabled,
       keyHighlightColor: keyHighlightColor ?? this.keyHighlightColor,
+      keyHighlightIntensity:
+          keyHighlightIntensity ?? this.keyHighlightIntensity,
+      keyHighlightSize: keyHighlightSize ?? this.keyHighlightSize,
+      keyHighlightGlow: keyHighlightGlow ?? this.keyHighlightGlow,
+      keyHighlightGlowRadius:
+          keyHighlightGlowRadius ?? this.keyHighlightGlowRadius,
+      keyHighlightFadeMs: keyHighlightFadeMs ?? this.keyHighlightFadeMs,
+      keyHighlightCornerRadius:
+          keyHighlightCornerRadius ?? this.keyHighlightCornerRadius,
+      keyHighlightUseNoteColor:
+          keyHighlightUseNoteColor ?? this.keyHighlightUseNoteColor,
       backgroundDim: backgroundDim ?? this.backgroundDim,
       laneOpacity: laneOpacity ?? this.laneOpacity,
       useHandColors: useHandColors ?? this.useHandColors,
@@ -123,6 +172,13 @@ class OverlayStyle {
         'lane_projection': laneProjection.name,
         'key_highlight_enabled': keyHighlightEnabled,
         'key_highlight_color': _colorToHex(keyHighlightColor),
+        'key_highlight_intensity': keyHighlightIntensity,
+        'key_highlight_size': keyHighlightSize,
+        'key_highlight_glow': keyHighlightGlow,
+        'key_highlight_glow_radius': keyHighlightGlowRadius,
+        'key_highlight_fade_ms': keyHighlightFadeMs,
+        'key_highlight_corner_radius': keyHighlightCornerRadius,
+        'key_highlight_use_note_color': keyHighlightUseNoteColor,
         'background_dim': backgroundDim,
         'lane_opacity': laneOpacity,
         'use_hand_colors': useHandColors,
@@ -152,6 +208,13 @@ class OverlayStyle {
             laneProjection == LaneProjection.upright ? 'Upright' : 'Tabletop',
         'key_highlight_enabled': keyHighlightEnabled,
         'key_highlight_color': _colorToRgba(keyHighlightColor),
+        'key_highlight_intensity': keyHighlightIntensity,
+        'key_highlight_size': keyHighlightSize,
+        'key_highlight_glow': keyHighlightGlow,
+        'key_highlight_glow_radius': keyHighlightGlowRadius,
+        'key_highlight_fade_ms': keyHighlightFadeMs,
+        'key_highlight_corner_radius': keyHighlightCornerRadius,
+        'key_highlight_use_note_color': keyHighlightUseNoteColor,
         'background_dim': backgroundDim,
         'lane_opacity': laneOpacity,
         'corner_radius': cornerRadius,

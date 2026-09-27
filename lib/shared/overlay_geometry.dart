@@ -103,14 +103,53 @@ class OverlayGeometry {
       final startOffset = note.startMs - effectiveTime;
       final endOffset = note.endMs - effectiveTime;
 
-      // Visibility check.
-      if (endOffset < -_trailFadeMs || startOffset > lookahead) continue;
+      // Visibility check. A lingering key highlight can outlive the strip's
+      // own trail, so keep the note alive for whichever lasts longer.
+      final highlightFadeMs =
+          style.keyHighlightEnabled ? style.keyHighlightFadeMs : 0.0;
+      final keepAliveMs =
+          highlightFadeMs > _trailFadeMs ? highlightFadeMs : _trailFadeMs;
+      if (endOffset < -keepAliveMs || startOffset > lookahead) continue;
       final isSounding = startOffset <= 0 && endOffset >= 0;
       if (!style.showBeforePlay && startOffset > 0) continue;
       if (!style.showDuringPlay && isSounding) continue;
 
       final isBlack = _isBlackKey(note.pitch);
       final keyX = _keyCanonicalX(note.pitch, lowestNote, isBlack);
+
+      // Determine color.
+      Color baseColor;
+      if (style.useHandColors) {
+        baseColor = note.track == 0 ? style.leftHandColor : style.rightHandColor;
+      } else {
+        baseColor = isBlack ? style.blackKeyColor : style.whiteKeyColor;
+      }
+
+      // Key highlights for notes being played, plus their fade-out afterwards.
+      // Computed before the strip geometry because once a note has ended its
+      // strip collapses to zero length and is culled, while the highlight may
+      // still be fading.
+      if (style.keyHighlightEnabled &&
+          startOffset <= 0 &&
+          endOffset >= -highlightFadeMs) {
+        final highlightQuad = _computeKeyQuad(
+            note.pitch, lowestNote, isBlack, h, style.keyHighlightSize);
+        var alpha = style.keyHighlightColor.opacity * style.keyHighlightIntensity;
+        if (endOffset < 0 && highlightFadeMs > 0) {
+          alpha *= 1.0 - ((-endOffset) / highlightFadeMs).clamp(0.0, 1.0);
+        }
+        // The rounding is stored as a fraction of the key width so the preview
+        // and the export agree at different resolutions.
+        final keyPxWidth = (highlightQuad[2] - highlightQuad[3]).distance;
+        keyHighlights.add(KeyHighlightRenderData(
+          quad: highlightQuad,
+          color: (style.keyHighlightUseNoteColor ? baseColor : style.keyHighlightColor)
+              .withOpacity(alpha.clamp(0.0, 1.0)),
+          glowRadius: style.keyHighlightGlowRadius,
+          glowIntensity: style.keyHighlightGlow,
+          cornerRadius: style.keyHighlightCornerRadius * keyPxWidth,
+        ));
+      }
 
       final tBottom = (startOffset / lookahead).clamp(0.0, 1.0);
       final tTop = (endOffset / lookahead).clamp(tBottom, 1.0);
@@ -132,13 +171,6 @@ class OverlayGeometry {
       final topRight = lanePointAt(uRight, tTop);
       final topLeft = lanePointAt(uLeft, tTop);
 
-      // Determine color.
-      Color baseColor;
-      if (style.useHandColors) {
-        baseColor = note.track == 0 ? style.leftHandColor : style.rightHandColor;
-      } else {
-        baseColor = isBlack ? style.blackKeyColor : style.whiteKeyColor;
-      }
       // Fade notes that have already ended (trail effect).
       final fade = endOffset < 0
           ? 1.0 - ((-endOffset) / _trailFadeMs).clamp(0.0, 1.0)
@@ -159,15 +191,6 @@ class OverlayGeometry {
         borderWidth: style.borderWidth * stripPxWidth,
         borderColor: style.borderColor.withOpacity(style.borderColor.opacity * fade),
       ));
-
-      // Key highlights for notes currently being played.
-      if (style.keyHighlightEnabled && startOffset <= 0 && endOffset >= 0) {
-        final highlightQuad = _computeKeyQuad(note.pitch, lowestNote, isBlack, h);
-        keyHighlights.add(KeyHighlightRenderData(
-          quad: highlightQuad,
-          color: style.keyHighlightColor,
-        ));
-      }
     }
 
     return OverlayFrameData(
@@ -507,14 +530,19 @@ class OverlayGeometry {
     return const [1, 3, 6, 8, 10].contains(semitone);
   }
 
-  /// Compute the key rectangle on the keyboard surface (y=0 to y=1)
-  /// using the homography. This is safe since it maps within the
-  /// calibrated region.
+  /// Compute the key rectangle on the keyboard surface using the homography.
+  /// This is safe since it maps within the calibrated region.
+  ///
+  /// [depth] is the fraction of the key's front-to-back extent the rectangle
+  /// covers. It shrinks toward the front edge (y=1), so a partial highlight
+  /// reads as a light sitting at the near edge of the key rather than a band
+  /// floating in its middle.
   static List<Offset> _computeKeyQuad(
     int pitch,
     int lowestNote,
     bool isBlack,
     List<List<double>> homography,
+    double depth,
   ) {
     final keyX = _keyCanonicalX(pitch, lowestNote, isBlack);
     final keyWidth = isBlack ? 0.55 : 0.9;
@@ -525,8 +553,9 @@ class OverlayGeometry {
 
     // Map the 4 corners of the key through the homography.
     // y=0 is top of keyboard, y=1 is bottom (front edge).
-    final tl = _transformPoint(homography, xLeft, 0.0);
-    final tr = _transformPoint(homography, xRight, 0.0);
+    final yTop = 1.0 - depth.clamp(0.0, 1.0);
+    final tl = _transformPoint(homography, xLeft, yTop);
+    final tr = _transformPoint(homography, xRight, yTop);
     final br = _transformPoint(homography, xRight, 1.0);
     final bl = _transformPoint(homography, xLeft, 1.0);
 

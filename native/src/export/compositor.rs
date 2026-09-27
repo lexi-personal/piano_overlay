@@ -58,7 +58,31 @@ impl Compositor {
 
         // Draw key highlights first (below strips)
         for highlight in &frame.key_highlights {
-            Self::fill_quad(buffer, width, height, &highlight.quad, highlight.color);
+            if highlight.glow_radius > 0.0 && highlight.glow_intensity > 0.0 {
+                let mut glow_color = highlight.color;
+                glow_color[3] *= highlight.glow_intensity * 0.4;
+                let expanded = Self::expand_quad(&highlight.quad, highlight.glow_radius as f64);
+                Self::draw_quad(
+                    buffer,
+                    width,
+                    height,
+                    &expanded,
+                    glow_color,
+                    highlight.corner_radius as f64 + highlight.glow_radius as f64,
+                    0.0,
+                    [0.0; 4],
+                );
+            }
+            Self::draw_quad(
+                buffer,
+                width,
+                height,
+                &highlight.quad,
+                highlight.color,
+                highlight.corner_radius as f64,
+                0.0,
+                [0.0; 4],
+            );
         }
 
         // Draw strip glow layers
