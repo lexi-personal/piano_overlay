@@ -221,72 +221,132 @@ class AbletonParser {
     return 'Untitled';
   }
 
+  /// Clips laid out in the Arrangement view.
+  static const _arrangementClipPath = [
+    'DeviceChain',
+    'MainSequencer',
+    'ClipTimeable',
+    'ArrangerAutomation',
+    'Events',
+    'MidiClip',
+  ];
+
+  /// Clips sitting in Session view slots. Note the doubled `ClipSlot`: the
+  /// outer element is the slot, the inner one wraps the clip itself.
+  static const _sessionClipPath = [
+    'DeviceChain',
+    'MainSequencer',
+    'ClipSlotList',
+    'ClipSlot',
+    'ClipSlot',
+    'Value',
+    'MidiClip',
+  ];
+
   static List<MidiNote> _extractNotesFromTrack(
       XmlElement trackElement, int trackIndex, double bpm) {
     final notes = <MidiNote>[];
     final msPerBeat = 60000.0 / bpm;
 
-    final midiClips = _findAllElementsRecursive(trackElement, 'MidiClip');
+    // Clips must be looked up by their exact path. A recursive search for
+    // every `MidiClip` under the track also picks up `TakeLanes`, which holds
+    // each raw pass of a comped recording. Live never plays those, and on a
+    // real comped take they outnumber the arrangement by several times over.
+    var clips = _elementsAtPath(trackElement, _arrangementClipPath);
+    if (clips.isEmpty) {
+      clips = _elementsAtPath(trackElement, _sessionClipPath);
+    }
 
-    for (final clip in midiClips) {
-      final clipStartBeats = _getDoubleAttribute(clip, 'CurrentStart') ?? 0.0;
-      final loopElement = clip.getElement('Loop');
-      final loopStartBeats = loopElement != null
-          ? _getDoubleAttribute(loopElement, 'LoopStart') ?? 0.0
-          : 0.0;
+    for (final clip in clips) {
+      // A deactivated clip stays in the set but makes no sound.
+      if (_getBoolAttribute(clip, 'Disabled') ?? false) continue;
+      _collectClipNotes(clip, trackIndex, msPerBeat, notes);
+    }
 
-      // Ableton 11+ format: Notes > KeyTracks > KeyTrack
-      final notesElement = _findElementRecursive(clip, 'Notes');
-      if (notesElement == null) continue;
+    notes.sort((a, b) => a.startMs.compareTo(b.startMs));
+    return notes;
+  }
 
-      final keyTracks = notesElement.getElement('KeyTracks');
-      if (keyTracks == null) continue;
+  /// Append every note [clip] actually sounds to [notes].
+  ///
+  /// Trimming a clip in Live does not delete notes, it only moves the loop
+  /// brace: the stored note list still holds everything that was ever played
+  /// into the clip. Only notes inside `[LoopStart, LoopEnd)` sound, and a note
+  /// running past the brace is cut off there rather than ringing on.
+  static void _collectClipNotes(
+    XmlElement clip,
+    int trackIndex,
+    double msPerBeat,
+    List<MidiNote> notes,
+  ) {
+    final clipStart = _getDoubleAttribute(clip, 'CurrentStart') ?? 0.0;
+    final clipEnd = _getDoubleAttribute(clip, 'CurrentEnd') ?? 0.0;
 
-      final keyTrackElements = keyTracks.childElements
-          .where((e) => e.name.local == 'KeyTrack')
-          .toList();
+    final loop = clip.getElement('Loop');
+    final loopStart =
+        loop == null ? 0.0 : _getDoubleAttribute(loop, 'LoopStart') ?? 0.0;
+    final loopEnd =
+        loop == null ? 0.0 : _getDoubleAttribute(loop, 'LoopEnd') ?? 0.0;
+    final loopOn = loop != null && (_getBoolAttribute(loop, 'LoopOn') ?? false);
 
-      for (final keyTrack in keyTrackElements) {
-        final midiKeyElement = keyTrack.getElement('MidiKey');
-        if (midiKeyElement == null) continue;
+    final loopLength = loopEnd - loopStart;
+    if (loopLength <= 0) return;
 
-        final pitch =
-            int.tryParse(midiKeyElement.getAttribute('Value') ?? '') ?? 0;
+    // How far the clip runs along the arrangement. A Session clip has no
+    // arrangement extent, so it plays its brace once.
+    var playLength = clipEnd - clipStart;
+    if (playLength <= 0) playLength = loopLength;
 
-        final keyTrackNotes = keyTrack.getElement('Notes');
-        if (keyTrackNotes == null) continue;
+    // A looping clip repeats the brace until the clip block is full; an
+    // unlooped one plays it at most once.
+    final passes = loopOn ? (playLength / loopLength).ceil() : 1;
+    if (!loopOn && playLength > loopLength) playLength = loopLength;
 
-        final noteEvents = keyTrackNotes.childElements
-            .where((e) => e.name.local == 'MidiNoteEvent')
-            .toList();
+    final keyTracks = clip.getElement('Notes')?.getElement('KeyTracks');
+    if (keyTracks == null) return;
 
-        for (final event in noteEvents) {
-          final time =
-              double.tryParse(event.getAttribute('Time') ?? '') ?? 0.0;
-          final duration =
-              double.tryParse(event.getAttribute('Duration') ?? '') ?? 0.0;
-          final velocity =
-              int.tryParse(event.getAttribute('Velocity') ?? '') ?? 100;
+    for (final keyTrack
+        in keyTracks.childElements.where((e) => e.name.local == 'KeyTrack')) {
+      final pitch = int.tryParse(
+          keyTrack.getElement('MidiKey')?.getAttribute('Value') ?? '');
+      if (pitch == null) continue;
 
-          final absoluteBeats =
-              clipStartBeats + (time - loopStartBeats);
-          final startMs = absoluteBeats * msPerBeat;
-          final durationMs = duration * msPerBeat;
+      final events = keyTrack.getElement('Notes');
+      if (events == null) continue;
+
+      for (final event in events.childElements
+          .where((e) => e.name.local == 'MidiNoteEvent')) {
+        // Notes can be deactivated one by one without being deleted.
+        if (event.getAttribute('IsEnabled') == 'false') continue;
+
+        final time = double.tryParse(event.getAttribute('Time') ?? '');
+        if (time == null || time < loopStart || time >= loopEnd) continue;
+
+        final velocity =
+            double.tryParse(event.getAttribute('Velocity') ?? '')?.round() ??
+                100;
+        final duration =
+            (double.tryParse(event.getAttribute('Duration') ?? '') ?? 0.0)
+                .clamp(0.0, loopEnd - time);
+
+        for (var pass = 0; pass < passes; pass++) {
+          final offset = (time - loopStart) + pass * loopLength;
+          if (offset >= playLength) break;
+
+          final audible = duration.clamp(0.0, playLength - offset);
+          if (audible <= 0) continue;
 
           notes.add(MidiNote(
             pitch: pitch,
             velocity: velocity,
-            startMs: startMs,
-            durationMs: durationMs,
+            startMs: (clipStart + offset) * msPerBeat,
+            durationMs: audible * msPerBeat,
             channel: 0,
             track: trackIndex,
           ));
         }
       }
     }
-
-    notes.sort((a, b) => a.startMs.compareTo(b.startMs));
-    return notes;
   }
 
   static Future<List<AbletonAudioFile>> _scanAudioFiles(
@@ -372,6 +432,12 @@ class AbletonParser {
     return double.tryParse(value);
   }
 
+  static bool? _getBoolAttribute(XmlElement parent, String childName) {
+    final value = parent.getElement(childName)?.getAttribute('Value');
+    if (value == null) return null;
+    return value == 'true';
+  }
+
   static XmlElement? _findElementRecursive(XmlElement parent, String name) {
     final direct = parent.getElement(name);
     if (direct != null) return direct;
@@ -383,21 +449,23 @@ class AbletonParser {
     return null;
   }
 
-  static List<XmlElement> _findAllElementsRecursive(
-      XmlElement parent, String name) {
-    final results = <XmlElement>[];
-    _collectElements(parent, name, results);
-    return results;
-  }
-
-  static void _collectElements(
-      XmlElement element, String name, List<XmlElement> results) {
-    if (element.name.local == name) {
-      results.add(element);
-      return;
+  /// Every element reached by walking [path] down from [root], one named step
+  /// at a time.
+  ///
+  /// Unlike a recursive search this cannot stray into a sibling branch that
+  /// happens to reuse an element name, which is what keeps take lanes out of
+  /// the clip list.
+  static List<XmlElement> _elementsAtPath(
+      XmlElement root, List<String> path) {
+    var current = <XmlElement>[root];
+    for (final name in path) {
+      final next = <XmlElement>[];
+      for (final element in current) {
+        next.addAll(element.childElements.where((e) => e.name.local == name));
+      }
+      if (next.isEmpty) return const [];
+      current = next;
     }
-    for (final child in element.childElements) {
-      _collectElements(child, name, results);
-    }
+    return current;
   }
 }

@@ -22,9 +22,8 @@ Calibration happens in place on the workspace video: the **Calibrate** tab puts 
 where you click the four keyboard corners directly on the frame and drag the handles to adjust.
 Corners are stored in video pixels, so the overlay keeps lining up when the window is resized.
 The calibration grid uses the same perspective mapping as the notes, so check its key
-boundaries against the video before applying. If notes look bunched together on an
-angled shot, try **Style → Timing → Projection → Upright** or shorten **Lookahead**;
-hide unrelated MIDI tracks in the expanded timeline if they add unwanted notes.
+boundaries against the video before applying. On a steeply angled shot,
+**Style → Timing → Projection → Upright** often reads better than the default.
 If your keyboard runs off the edge of the recording, drag the **Frame zoom** slider down: the
 video shrinks inside the centre area so you can drop corners in the margin outside the frame.
 The overlay itself is always clipped to the video rectangle, matching what the export produces.
@@ -42,6 +41,21 @@ the app offers to restore it.
 Expand the timeline with the chevron on the right of the transport bar to see one lane per MIDI
 track. Each lane can be hidden, assigned to the left or right hand, and dragged sideways to line
 its notes up with the performance.
+
+### Importing from Ableton Live
+
+An `.als` import takes only the notes Live actually plays, which is narrower than the notes the
+file stores:
+
+- **Take lanes are ignored.** Comping a recording leaves every raw pass in the set. Live plays
+  only the arrangement clip you comped, so importing the lanes would multiply the note count
+  several times over.
+- **The loop brace decides what sounds.** Trimming a clip in Live hides notes rather than
+  deleting them, so notes outside the brace are dropped, and a note running past it is cut off
+  there instead of ringing on.
+- **Looping clips are expanded**, repeating their brace until the arrangement clip is filled.
+- **Deactivated clips and deactivated individual notes are skipped.**
+- Arrangement clips win; a set that only ever used the Session view falls back to its clip slots.
 
 ## Architecture
 
